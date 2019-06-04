@@ -17,6 +17,7 @@ func BackEnds() []string {
 		"bitcoind",
 		"btcd",
 		"neutrino",
+		"lightwallet",
 	}
 }
 
