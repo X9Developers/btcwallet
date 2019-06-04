@@ -98,7 +98,7 @@ type LightWalletClient struct {
 
 	// zmqHeaderNtfns is a channel through which ZMQ block events will be
 	// retrieved from the backing bitcoind connection.
-	zmqHeaderNtfns chan *wire.BlockHeaderLW
+	zmqHeaderNtfns chan *wire.BlockHeader
 
 	quit chan struct{}
 	wg   sync.WaitGroup
@@ -115,17 +115,17 @@ func (c *LightWalletClient) BackEnd() string {
 
 // GetBestBlock returns the highest block known to bitcoind.
 func (c *LightWalletClient) GetBestBlock() (*chainhash.Hash, int32, error) {
-	bcinfo, err := c.chainConn.client.GetBlockChainInfo()
+	chainInfo, err := c.chainConn.client.GetChainInfo()
 	if err != nil {
 		return nil, 0, err
 	}
 
-	hash, err := chainhash.NewHashFromStr(bcinfo.BestBlockHash)
+	hash, err := chainhash.NewHashFromStr(chainInfo.BestBlockHash)
 	if err != nil {
 		return nil, 0, err
 	}
 
-	return hash, bcinfo.Blocks, nil
+	return hash, chainInfo.Height, nil
 }
 
 // GetBlockHeight returns the height for the hash, if known, or returns an
@@ -549,7 +549,7 @@ func (c *LightWalletClient) ntfnHandler() {
 		select {
 		case header := <-c.zmqHeaderNtfns:
 			// TODO: Rostyslav Antonyshyn add valid handler for zmq headers
-			fmt.Printf("New Header received" + header.PrevBlock.String())
+			header.Nonce = 0
 		case <-c.quit:
 			return
 		}
@@ -695,129 +695,6 @@ func (c *LightWalletClient) onRescanFinished(hash *chainhash.Hash, height int32,
 	}
 }
 
-// reorg processes a reorganization during chain synchronization. This is
-// separate from a rescan's handling of a reorg. This will rewind back until it
-// finds a common ancestor and notify all the new blocks since then.
-func (c *LightWalletClient) reorg(currentBlock waddrmgr.BlockStamp,
-	reorgBlock *wire.MsgBlock) error {
-
-	log.Debugf("Possible reorg at block %s", reorgBlock.BlockHash())
-
-	// Retrieve the best known height based on the block which caused the
-	// reorg. This way, we can preserve the chain of blocks we need to
-	// retrieve.
-	bestHash := reorgBlock.BlockHash()
-	bestHeight, err := c.GetBlockHeight(&bestHash)
-	if err != nil {
-		return err
-	}
-
-	if bestHeight < currentBlock.Height {
-		log.Debug("Detected multiple reorgs")
-		return nil
-	}
-
-	// We'll now keep track of all the blocks known to the *chain*, starting
-	// from the best block known to us until the best block in the chain.
-	// This will let us fast-forward despite any future reorgs.
-	blocksToNotify := list.New()
-	blocksToNotify.PushFront(reorgBlock)
-	previousBlock := reorgBlock.Header.PrevBlock
-	for i := bestHeight - 1; i >= currentBlock.Height; i-- {
-		block, err := c.GetBlock(&previousBlock)
-		if err != nil {
-			return err
-		}
-		blocksToNotify.PushFront(block)
-		previousBlock = block.Header.PrevBlock
-	}
-
-	// Rewind back to the last common ancestor block using the previous
-	// block hash from each header to avoid any race conditions. If we
-	// encounter more reorgs, they'll be queued and we'll repeat the cycle.
-	//
-	// We'll start by retrieving the header to the best block known to us.
-	currentHeader, err := c.GetBlockHeader(&currentBlock.Hash)
-	if err != nil {
-		return err
-	}
-
-	// Then, we'll walk backwards in the chain until we find our common
-	// ancestor.
-	for previousBlock != currentHeader.PrevBlock {
-		// Since the previous hashes don't match, the current block has
-		// been reorged out of the chain, so we should send a
-		// BlockDisconnected notification for it.
-		log.Debugf("Disconnecting block %d (%v)", currentBlock.Height,
-			currentBlock.Hash)
-
-		c.onBlockDisconnected(
-			&currentBlock.Hash, currentBlock.Height,
-			currentBlock.Timestamp,
-		)
-
-		// Our current block should now reflect the previous one to
-		// continue the common ancestor search.
-		currentHeader, err = c.GetBlockHeader(&currentHeader.PrevBlock)
-		if err != nil {
-			return err
-		}
-
-		currentBlock.Height--
-		currentBlock.Hash = currentHeader.PrevBlock
-		currentBlock.Timestamp = currentHeader.Timestamp
-
-		// Store the correct block in our list in order to notify it
-		// once we've found our common ancestor.
-		block, err := c.GetBlock(&previousBlock)
-		if err != nil {
-			return err
-		}
-		blocksToNotify.PushFront(block)
-		previousBlock = block.Header.PrevBlock
-	}
-
-	// Disconnect the last block from the old chain. Since the previous
-	// block remains the same between the old and new chains, the tip will
-	// now be the last common ancestor.
-	log.Debugf("Disconnecting block %d (%v)", currentBlock.Height,
-		currentBlock.Hash)
-
-	c.onBlockDisconnected(
-		&currentBlock.Hash, currentBlock.Height, currentHeader.Timestamp,
-	)
-
-	currentBlock.Height--
-
-	// Now we fast-forward to the new block, notifying along the way.
-	for blocksToNotify.Front() != nil {
-		nextBlock := blocksToNotify.Front().Value.(*wire.MsgBlock)
-		nextHeight := currentBlock.Height + 1
-		nextHash := nextBlock.BlockHash()
-		nextHeader, err := c.GetBlockHeader(&nextHash)
-		if err != nil {
-			return err
-		}
-
-		_, err = c.filterBlock(nextBlock, nextHeight, true)
-		if err != nil {
-			return err
-		}
-
-		currentBlock.Height = nextHeight
-		currentBlock.Hash = nextHash
-		currentBlock.Timestamp = nextHeader.Timestamp
-
-		blocksToNotify.Remove(blocksToNotify.Front())
-	}
-
-	c.bestBlockMtx.Lock()
-	c.bestBlock = currentBlock
-	c.bestBlockMtx.Unlock()
-
-	return nil
-}
-
 // FilterBlocks scans the blocks contained in the FilterBlocksRequest for any
 // addresses of interest. Each block will be fetched and filtered sequentially,
 // returning a FilterBlocksReponse for the first block containing a matching
@@ -951,6 +828,9 @@ func (c *LightWalletClient) rescan(start chainhash.Hash) error {
 				return err
 			}
 		}
+
+		// get previous blockHash
+		//prevBlockHash, _ := c.GetBlockHash(int64(block.Header.Version - 1)) // version in lightWallet returns blockHeight
 
 		for block.Header.PrevBlock.String() != previousHeader.Hash {
 			// If we're in this for loop, it looks like we've been

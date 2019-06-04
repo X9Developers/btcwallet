@@ -8,15 +8,11 @@ import (
 	"sync/atomic"
 	"time"
 
-	rpc2 "net/rpc"
-	"reflect"
-
 	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/rpcclient"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/lightninglabs/gozmq"
-	"github.com/ugorji/go/codec"
 )
 
 // BitcoindConn represents a persistent client connection to a bitcoind node
@@ -69,8 +65,7 @@ func NewLightWalletConn(chainParams *chaincfg.Params, host, user, pass,
 		DisableAutoReconnect: false,
 		DisableConnectOnNew:  true,
 		DisableTLS:           true,
-		HTTPPostMode:         false,
-		MSGPackMode:		  true,
+		HTTPPostMode:         true,
 	}
 
 	client, err := rpcclient.New(clientCfg, nil)
@@ -100,17 +95,15 @@ func (c *LightWalletConn) Start() error {
 		return nil
 	}
 
-	// TODO: RostyslavAntonyshyn Add chain verifications
-
 	// Verify that the node is running on the expected network.
-	nets, err := c.getCurrentNet()
+	net, err := c.getCurrentNet()
 	if err != nil {
-	    	c.client.Disconnect()
-	    	return err
+		c.client.Disconnect()
+		return err
 	}
-	if nets != c.chainParams.Net {
-	    	c.client.Disconnect()
-	    	return fmt.Errorf("expected network %v, got %v",
+	if net != c.chainParams.Net {
+		c.client.Disconnect()
+		return fmt.Errorf("expected network %v, got %v",
 			c.chainParams.Net, net)
 	}
 
@@ -118,8 +111,9 @@ func (c *LightWalletConn) Start() error {
 	// and transaction event notifications. We'll use two as a separation of
 	// concern to ensure one type of event isn't dropped from the connection
 	// queue due to another type of event filling it up.
+
 	zmqHeaderConn, err := gozmq.Subscribe(
-		c.zmqHeaderHost, []string{"rawheader"}, c.zmqPollInterval, // rawheader
+		c.zmqHeaderHost, []string{"rawheader"}, c.zmqPollInterval,
 	)
 	if err != nil {
 		c.client.Disconnect()
@@ -191,17 +185,20 @@ func (c *LightWalletConn) headerEventHandler(conn *gozmq.Conn) {
 		// deserialize it, and report it to the different rescan
 		// clients.
 		eventType := string(msgBytes[0])
-		fmt.Printf("\n\nNew event")
+
 		switch eventType {
 		case "rawheader":
-			blockHeader := &wire.BlockHeaderLW{}
+			lightHeader := &wire.LightWalletHeader{}
 			r := bytes.NewReader(msgBytes[1])
+			fmt.Printf("New header\n")
 			// Decode the raw bytes into a proper header.
-			if err := blockHeader.DeserializeLW(r); err != nil {
+			if err := lightHeader.DeserializeLightHeader(r); err != nil {
 				log.Errorf("Unable to deserialize header: %v",
 					err)
 				continue
 			}
+
+			blockHeader := lightHeader.BlockHeader()
 
 			c.rescanClientsMtx.Lock()
 			for _, client := range c.rescanClients {
@@ -231,19 +228,15 @@ func (c *LightWalletConn) headerEventHandler(conn *gozmq.Conn) {
 
 // getCurrentNet returns the network on which the bitcoind node is running.
 func (c *LightWalletConn) getCurrentNet() (wire.BitcoinNet, error) {
-	hash, err := c.client.GetBlockHash(228734)
+
+	hash, err := c.client.GetBlockHash(0)
 	if err != nil {
 		return 0, err
 	}
 
-	switch *hash {
-	case *chaincfg.TestNet3Params.GenesisHash:
-		return chaincfg.TestNet3Params.Net, nil
-	case *chaincfg.RegressionNetParams.GenesisHash:
-		return chaincfg.RegressionNetParams.Net, nil
-	case *chaincfg.MainNetParams.GenesisHash:
+	if hash == chaincfg.MainNetParams.GenesisHash {
 		return chaincfg.MainNetParams.Net, nil
-	default:
+	} else {
 		return 0, fmt.Errorf("unknown network with genesis hash %v", hash)
 	}
 }
@@ -266,7 +259,7 @@ func (c *LightWalletConn) NewLightWalletClient() *LightWalletClient {
 		watchedTxs:       make(map[chainhash.Hash]struct{}),
 
 		notificationQueue: NewConcurrentQueue(20),
-		zmqHeaderNtfns:    make(chan *wire.BlockHeaderLW),
+		zmqHeaderNtfns:    make(chan *wire.BlockHeader),
 
 		mempool:        make(map[chainhash.Hash]struct{}),
 		expiredMempool: make(map[int32]map[chainhash.Hash]struct{}),
