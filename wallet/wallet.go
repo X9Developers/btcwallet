@@ -510,6 +510,7 @@ func (w *Wallet) scanChain(startHeight int32,
 			return err
 		}
 		header, err := chainClient.GetBlockHeader(hash)
+		fmt.Printf("%s %s\n", header.PrevBlock.String(), header.MerkleRoot.String());
 		if err != nil {
 			return err
 		}
@@ -619,7 +620,8 @@ func (w *Wallet) syncToBirthday() (*waddrmgr.BlockStamp, error) {
 	// If a birthday stamp has yet to be found, we'll return an error
 	// indicating so, but only if this is a live chain like it is the case
 	// with testnet and mainnet.
-	if birthdayStamp == nil && !w.isDevEnv() {
+	// TODO: yuraolex, mock only for time being
+	if birthdayStamp == nil && (false && !w.isDevEnv()) {
 		tx.Rollback()
 		return nil, fmt.Errorf("did not find a suitable birthday "+
 			"block with a timestamp greater than %v", birthday)
