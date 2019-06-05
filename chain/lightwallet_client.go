@@ -128,6 +128,16 @@ func (c *LightWalletClient) GetBestBlock() (*chainhash.Hash, int32, error) {
 	return hash, chainInfo.Height, nil
 }
 
+// StartRescan initiates rescan sending to lightwallet rescan request.
+func (c *LightWalletClient) StartRescan(hash *chainhash.Hash) (*string, error) {
+        return c.chainConn.client.StartRescan(hash)
+}
+
+// StopRescan initiates rescan_abort.
+func (c *LightWalletClient) StopRescan() error {
+        return c.chainConn.client.AbortRescan()
+}
+
 // GetBlockHeight returns the height for the hash, if known, or returns an
 // error.
 func (c *LightWalletClient) GetBlockHeight(hash *chainhash.Hash) (int32, error) {
