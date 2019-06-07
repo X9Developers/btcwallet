@@ -2,6 +2,7 @@ package chain
 
 import (
 	"bytes"
+	"encoding/hex"
 	"fmt"
 	"net"
 	"sync"
@@ -113,7 +114,7 @@ func (c *LightWalletConn) Start() error {
 	// queue due to another type of event filling it up.
 
 	zmqHeaderConn, err := gozmq.Subscribe(
-		c.zmqHeaderHost, []string{"rawheader"}, c.zmqPollInterval,
+		c.zmqHeaderHost, []string{"hashblock", "rawheader"}, c.zmqPollInterval,
 	)
 	if err != nil {
 		c.client.Disconnect()
@@ -211,6 +212,26 @@ func (c *LightWalletConn) headerEventHandler(conn *gozmq.Conn) {
 				}
 			}
 			c.rescanClientsMtx.Unlock()
+		case "hashblock":
+			hash := hex.EncodeToString(msgBytes[1])
+
+
+			fmt.Println("Received new tip:", hash)
+
+			chainHash,_ := chainhash.NewHashFromStr(hash)
+
+			c.rescanClientsMtx.Lock()
+			for _, client := range c.rescanClients {
+				select {
+				case client.zmqChangeTipNtnfs <- chainHash:
+				case <-client.quit:
+				case <-c.quit:
+					c.rescanClientsMtx.Unlock()
+					return
+				}
+			}
+			c.rescanClientsMtx.Unlock()
+
 		default:
 			// It's possible that the message wasn't fully read if
 			// bitcoind shuts down, which will produce an unreadable
@@ -260,6 +281,7 @@ func (c *LightWalletConn) NewLightWalletClient() *LightWalletClient {
 
 		notificationQueue: NewConcurrentQueue(20),
 		zmqHeaderNtfns:    make(chan *wire.BlockHeader),
+		zmqChangeTipNtnfs: make(chan *chainhash.Hash),
 
 		mempool:        make(map[chainhash.Hash]struct{}),
 		expiredMempool: make(map[int32]map[chainhash.Hash]struct{}),

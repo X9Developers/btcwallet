@@ -100,6 +100,8 @@ type LightWalletClient struct {
 	// retrieved from the backing bitcoind connection.
 	zmqHeaderNtfns chan *wire.BlockHeader
 
+	zmqChangeTipNtnfs chan *chainhash.Hash
+
 	quit chan struct{}
 	wg   sync.WaitGroup
 }
@@ -342,7 +344,7 @@ func (c *LightWalletClient) RescanBlocks(
 			continue
 		}
 
-		relevantTxs, err := c.filterBlock(block, header.Height, false)
+		relevantTxs, err := c.filterBlock2(block, header.Height, false)
 		if len(relevantTxs) > 0 {
 			rescannedBlock := btcjson.RescannedBlock{
 				Hash: hash.String(),
@@ -560,6 +562,43 @@ func (c *LightWalletClient) ntfnHandler() {
 		case header := <-c.zmqHeaderNtfns:
 			// TODO: Rostyslav Antonyshyn add valid handler for zmq headers
 			header.Nonce = 0
+		case newTipHash := <-c.zmqChangeTipNtnfs:
+
+			c.bestBlockMtx.Lock()
+			bestBlock := c.bestBlock
+			c.bestBlockMtx.Unlock()
+
+			newHeader, err := c.chainConn.client.GetBlockHeader(newTipHash)
+
+			if err != nil {
+				log.Errorf("Unable to get block header for: %v: %v", newTipHash.String(), err)
+				continue
+			}
+
+			if newHeader.PrevBlock == bestBlock.Hash {
+				newBlockHeight := bestBlock.Height + 1
+
+				_, err := c.filterBlock(
+					newHeader, newBlockHeight, true,
+				)
+				if err != nil {
+					log.Errorf("Unable to filter block %v: %v",
+						*newTipHash, err)
+					continue
+				}
+
+				// With the block succesfully filtered, we'll
+				// make it our new best block.
+				bestBlock.Hash = *newTipHash
+				bestBlock.Height = newBlockHeight
+				bestBlock.Timestamp = newHeader.Timestamp
+
+				c.bestBlockMtx.Lock()
+				c.bestBlock = bestBlock
+				c.bestBlockMtx.Unlock()
+
+				continue
+			}
 		case <-c.quit:
 			return
 		}
@@ -911,7 +950,7 @@ func (c *LightWalletClient) rescan(start chainhash.Hash) error {
 		headers.PushBack(previousHeader)
 
 		// Notify the block and any of its relevant transacations.
-		if _, err = c.filterBlock(block, i, true); err != nil {
+		if _, err = c.filterBlock2(block, i, true); err != nil {
 			return err
 		}
 
@@ -944,68 +983,73 @@ func (c *LightWalletClient) rescan(start chainhash.Hash) error {
 	return nil
 }
 
+func (c *LightWalletClient) filterBlock2(block *wire.MsgBlock, height int32,
+	notify bool) ([]*wtxmgr.TxRecord, error) {
+	return nil, nil
+}
+
 // filterBlock filters a block for watched outpoints and addresses, and returns
 // any matching transactions, sending notifications along the way.
-func (c *LightWalletClient) filterBlock(block *wire.MsgBlock, height int32,
+func (c *LightWalletClient) filterBlock(header *wire.BlockHeader, height int32,
 	notify bool) ([]*wtxmgr.TxRecord, error) {
 
 	// If this block happened before the client's birthday, then we'll skip
 	// it entirely.
-	if block.Header.Timestamp.Before(c.birthday) {
+	if header.Timestamp.Before(c.birthday) {
 		return nil, nil
 	}
 
 	if c.shouldNotifyBlocks() {
 		log.Debugf("Filtering block %d (%s) with %d transactions",
-			height, block.BlockHash(), len(block.Transactions))
+			height, header.BlockHash(), 0)//len(block.Transactions))
 	}
 
-	// Create a block details template to use for all of the confirmed
-	// transactions found within this block.
-	blockHash := block.BlockHash()
-	blockDetails := &btcjson.BlockDetails{
-		Hash:   blockHash.String(),
-		Height: height,
-		Time:   block.Header.Timestamp.Unix(),
-	}
-
-	// Now, we'll through all of the transactions in the block keeping track
-	// of any relevant to the caller.
+	//// Create a block details template to use for all of the confirmed
+	//// transactions found within this block.
+	blockHash := header.BlockHash()
+	//blockDetails := &btcjson.BlockDetails{
+	//	Hash:   blockHash.String(),
+	//	Height: height,
+	//	Time:   block.Header.Timestamp.Unix(),
+	//}
+	//
+	//// Now, we'll through all of the transactions in the block keeping track
+	//// of any relevant to the caller.
 	var relevantTxs []*wtxmgr.TxRecord
-	confirmedTxs := make(map[chainhash.Hash]struct{})
-	for i, tx := range block.Transactions {
-		// Update the index in the block details with the index of this
-		// transaction.
-		blockDetails.Index = i
-		isRelevant, rec, err := c.filterTx(tx, blockDetails, notify)
-		if err != nil {
-			log.Warnf("Unable to filter transaction %v: %v",
-				tx.TxHash(), err)
-			continue
-		}
-
-		if isRelevant {
-			relevantTxs = append(relevantTxs, rec)
-			confirmedTxs[tx.TxHash()] = struct{}{}
-		}
-	}
-
-	// Update the expiration map by setting the block's confirmed
-	// transactions and deleting any in the mempool that were confirmed
-	// over 288 blocks ago.
-	c.watchMtx.Lock()
-	c.expiredMempool[height] = confirmedTxs
-	if oldBlock, ok := c.expiredMempool[height-288]; ok {
-		for txHash := range oldBlock {
-			delete(c.mempool, txHash)
-		}
-		delete(c.expiredMempool, height-288)
-	}
-	c.watchMtx.Unlock()
+	//confirmedTxs := make(map[chainhash.Hash]struct{})
+	//for i, tx := range block.Transactions {
+	//	// Update the index in the block details with the index of this
+	//	// transaction.
+	//	blockDetails.Index = i
+	//	isRelevant, rec, err := c.filterTx(tx, blockDetails, notify)
+	//	if err != nil {
+	//		log.Warnf("Unable to filter transaction %v: %v",
+	//			tx.TxHash(), err)
+	//		continue
+	//	}
+	//
+	//	if isRelevant {
+	//		relevantTxs = append(relevantTxs, rec)
+	//		confirmedTxs[tx.TxHash()] = struct{}{}
+	//	}
+	//}
+	//
+	//// Update the expiration map by setting the block's confirmed
+	//// transactions and deleting any in the mempool that were confirmed
+	//// over 288 blocks ago.
+	//c.watchMtx.Lock()
+	//c.expiredMempool[height] = confirmedTxs
+	//if oldBlock, ok := c.expiredMempool[height-288]; ok {
+	//	for txHash := range oldBlock {
+	//		delete(c.mempool, txHash)
+	//	}
+	//	delete(c.expiredMempool, height-288)
+	//}
+	//c.watchMtx.Unlock()
 
 	if notify {
-		c.onFilteredBlockConnected(height, &block.Header, relevantTxs)
-		c.onBlockConnected(&blockHash, height, block.Header.Timestamp)
+		c.onFilteredBlockConnected(height, header, relevantTxs)
+		c.onBlockConnected(&blockHash, height, header.Timestamp)
 	}
 
 	return relevantTxs, nil
