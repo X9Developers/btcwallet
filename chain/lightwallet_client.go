@@ -1004,48 +1004,51 @@ func (c *LightWalletClient) filterBlock(header *wire.BlockHeader, height int32,
 			height, header.BlockHash(), 0)//len(block.Transactions))
 	}
 
-	//// Create a block details template to use for all of the confirmed
-	//// transactions found within this block.
+	// Create a block details template to use for all of the confirmed
+	// transactions found within this block.
 	blockHash := header.BlockHash()
-	//blockDetails := &btcjson.BlockDetails{
-	//	Hash:   blockHash.String(),
-	//	Height: height,
-	//	Time:   block.Header.Timestamp.Unix(),
-	//}
+	blockDetails := &btcjson.BlockDetails{
+		Hash:   blockHash.String(),
+		Height: height,
+		Time:   header.Timestamp.Unix(),
+	}
+
+	
+
 	//
-	//// Now, we'll through all of the transactions in the block keeping track
-	//// of any relevant to the caller.
+	// Now, we'll through all of the transactions in the block keeping track
+	// of any relevant to the caller.
 	var relevantTxs []*wtxmgr.TxRecord
-	//confirmedTxs := make(map[chainhash.Hash]struct{})
-	//for i, tx := range block.Transactions {
-	//	// Update the index in the block details with the index of this
-	//	// transaction.
-	//	blockDetails.Index = i
-	//	isRelevant, rec, err := c.filterTx(tx, blockDetails, notify)
-	//	if err != nil {
-	//		log.Warnf("Unable to filter transaction %v: %v",
-	//			tx.TxHash(), err)
-	//		continue
-	//	}
-	//
-	//	if isRelevant {
-	//		relevantTxs = append(relevantTxs, rec)
-	//		confirmedTxs[tx.TxHash()] = struct{}{}
-	//	}
-	//}
-	//
-	//// Update the expiration map by setting the block's confirmed
-	//// transactions and deleting any in the mempool that were confirmed
-	//// over 288 blocks ago.
-	//c.watchMtx.Lock()
-	//c.expiredMempool[height] = confirmedTxs
-	//if oldBlock, ok := c.expiredMempool[height-288]; ok {
-	//	for txHash := range oldBlock {
-	//		delete(c.mempool, txHash)
-	//	}
-	//	delete(c.expiredMempool, height-288)
-	//}
-	//c.watchMtx.Unlock()
+	confirmedTxs := make(map[chainhash.Hash]struct{})
+	for i, tx := range block.Transactions {
+		// Update the index in the block details with the index of this
+		// transaction.
+		blockDetails.Index = i
+		isRelevant, rec, err := c.filterTx(tx, blockDetails, notify)
+		if err != nil {
+			log.Warnf("Unable to filter transaction %v: %v",
+				tx.TxHash(), err)
+			continue
+		}
+
+		if isRelevant {
+			relevantTxs = append(relevantTxs, rec)
+			confirmedTxs[tx.TxHash()] = struct{}{}
+		}
+	}
+
+	// Update the expiration map by setting the block's confirmed
+	// transactions and deleting any in the mempool that were confirmed
+	// over 288 blocks ago.
+	c.watchMtx.Lock()
+	c.expiredMempool[height] = confirmedTxs
+	if oldBlock, ok := c.expiredMempool[height-288]; ok {
+		for txHash := range oldBlock {
+			delete(c.mempool, txHash)
+		}
+		delete(c.expiredMempool, height-288)
+	}
+	c.watchMtx.Unlock()
 
 	if notify {
 		c.onFilteredBlockConnected(height, header, relevantTxs)
