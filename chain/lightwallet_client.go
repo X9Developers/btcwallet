@@ -140,6 +140,11 @@ func (c *LightWalletClient) StopRescan() error {
         return c.chainConn.client.AbortRescan()
 }
 
+// GetFilterBlock returns filter block for given hash
+func (c *LightWalletClient) GetFilterBlock(hash *chainhash.Hash) (*wire.BlockHeader, *wtxmgr.TxRecord, error) {
+	return c.chainConn.client.GetFilterBlock(hash)
+}
+
 // GetBlockHeight returns the height for the hash, if known, or returns an
 // error.
 func (c *LightWalletClient) GetBlockHeight(hash *chainhash.Hash) (int32, error) {
