@@ -141,7 +141,7 @@ func (c *LightWalletClient) StopRescan() error {
 }
 
 // GetFilterBlock returns filter block for given hash
-func (c *LightWalletClient) GetFilterBlock(hash *chainhash.Hash) (*wire.BlockHeader, *wtxmgr.TxRecord, error) {
+func (c *LightWalletClient) GetFilterBlock(hash *chainhash.Hash) ([]*wtxmgr.TxRecord, error) {
 	return c.chainConn.client.GetFilterBlock(hash)
 }
 
@@ -1018,27 +1018,32 @@ func (c *LightWalletClient) filterBlock(header *wire.BlockHeader, height int32,
 		Time:   header.Timestamp.Unix(),
 	}
 
-	
+	transactions, err := c.chainConn.client.GetFilterBlock(&blockHash)
+
+	if err != nil {
+		fmt.Printf("Failed to get filter block, %v: %v", blockHash.String(), err)
+		return nil, nil
+	}
 
 	//
 	// Now, we'll through all of the transactions in the block keeping track
 	// of any relevant to the caller.
 	var relevantTxs []*wtxmgr.TxRecord
 	confirmedTxs := make(map[chainhash.Hash]struct{})
-	for i, tx := range block.Transactions {
+	for _, tx := range transactions {
 		// Update the index in the block details with the index of this
 		// transaction.
-		blockDetails.Index = i
-		isRelevant, rec, err := c.filterTx(tx, blockDetails, notify)
+		// blockDetails.Index = i
+		isRelevant, err := c.filterTx(tx, blockDetails, notify)
 		if err != nil {
 			log.Warnf("Unable to filter transaction %v: %v",
-				tx.TxHash(), err)
+				tx.Hash, err)
 			continue
 		}
 
 		if isRelevant {
-			relevantTxs = append(relevantTxs, rec)
-			confirmedTxs[tx.TxHash()] = struct{}{}
+			relevantTxs = append(relevantTxs, tx)
+			confirmedTxs[tx.Hash] = struct{}{}
 		}
 	}
 
@@ -1065,21 +1070,11 @@ func (c *LightWalletClient) filterBlock(header *wire.BlockHeader, height int32,
 
 // filterTx determines whether a transaction is relevant to the client by
 // inspecting the client's different filters.
-func (c *LightWalletClient) filterTx(tx *wire.MsgTx,
+func (c *LightWalletClient) filterTx(rec *wtxmgr.TxRecord,
 	blockDetails *btcjson.BlockDetails,
-	notify bool) (bool, *wtxmgr.TxRecord, error) {
+	notify bool) (bool, error) {
 
-	txDetails := btcutil.NewTx(tx)
-	if blockDetails != nil {
-		txDetails.SetIndex(blockDetails.Index)
-	}
 
-	rec, err := wtxmgr.NewTxRecordFromMsgTx(txDetails.MsgTx(), time.Now())
-	if err != nil {
-		log.Errorf("Cannot create transaction record for relevant "+
-			"tx: %v", err)
-		return false, nil, err
-	}
 	if blockDetails != nil {
 		rec.Received = time.Unix(blockDetails.Time, 0)
 	}
@@ -1092,11 +1087,11 @@ func (c *LightWalletClient) filterTx(tx *wire.MsgTx,
 	// If we've already seen this transaction and it's now been confirmed,
 	// then we'll shortcut the filter process by immediately sending a
 	// notification to the caller that the filter matches.
-	if _, ok := c.mempool[tx.TxHash()]; ok {
+	if _, ok := c.mempool[rec.Hash]; ok {
 		if notify && blockDetails != nil {
 			c.onRelevantTx(rec, blockDetails)
 		}
-		return true, rec, nil
+		return true, nil
 	}
 
 	// Otherwise, this is a new transaction we have yet to see. We'll need
@@ -1106,7 +1101,7 @@ func (c *LightWalletClient) filterTx(tx *wire.MsgTx,
 	// We'll start by checking all inputs and determining whether it spends
 	// an existing outpoint or a pkScript encoded as an address in our watch
 	// list.
-	for _, txIn := range tx.TxIn {
+	for _, txIn := range rec.MsgTx.TxIn {
 		// If it matches an outpoint in our watch list, we can exit our
 		// loop early.
 		if _, ok := c.watchedOutPoints[txIn.PreviousOutPoint]; ok {
@@ -1138,7 +1133,7 @@ func (c *LightWalletClient) filterTx(tx *wire.MsgTx,
 	// We'll also cycle through its outputs to determine if it pays to
 	// any of the currently watched addresses. If an output matches, we'll
 	// add it to our watch list.
-	for i, txOut := range tx.TxOut {
+	for i, txOut := range rec.MsgTx.TxOut {
 		_, addrs, _, err := txscript.ExtractPkScriptAddrs(
 			txOut.PkScript, c.chainParams,
 		)
@@ -1151,7 +1146,7 @@ func (c *LightWalletClient) filterTx(tx *wire.MsgTx,
 			if _, ok := c.watchedAddresses[addr.String()]; ok {
 				isRelevant = true
 				op := wire.OutPoint{
-					Hash:  tx.TxHash(),
+					Hash:  rec.Hash,
 					Index: uint32(i),
 				}
 				c.watchedOutPoints[op] = struct{}{}
@@ -1162,14 +1157,14 @@ func (c *LightWalletClient) filterTx(tx *wire.MsgTx,
 	// If the transaction didn't pay to any of our watched addresses, we'll
 	// check if we're currently watching for the hash of this transaction.
 	if !isRelevant {
-		if _, ok := c.watchedTxs[tx.TxHash()]; ok {
+		if _, ok := c.watchedTxs[rec.Hash]; ok {
 			isRelevant = true
 		}
 	}
 
 	// If the transaction is not relevant to us, we can simply exit.
 	if !isRelevant {
-		return false, rec, nil
+		return false, nil
 	}
 
 	// Otherwise, the transaction matched our filters, so we should dispatch
@@ -1177,10 +1172,10 @@ func (c *LightWalletClient) filterTx(tx *wire.MsgTx,
 	// our mempool so that it can also be notified as part of
 	// FilteredBlockConnected once it confirms.
 	if blockDetails == nil {
-		c.mempool[tx.TxHash()] = struct{}{}
+		c.mempool[rec.Hash] = struct{}{}
 	}
 
 	c.onRelevantTx(rec, blockDetails)
 
-	return true, rec, nil
+	return true, nil
 }
