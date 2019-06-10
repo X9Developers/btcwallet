@@ -21,12 +21,12 @@ import (
 
 var (
 	// ErrLightWalletClientShuttingDown is an error returned when we attempt
-	// to receive a notification for a specific item and the bitcoind client
+	// to receive a notification for a specific item and the lightwallet client
 	// is in the middle of shutting down.
 	ErrLightWalletClientShuttingDown = errors.New("client is shutting down")
 )
 
-// LightWalletClient represents a persistent client connection to a bitcoind server
+// LightWalletClient represents a persistent client connection to a lightwallet server
 // for information regarding the current best block chain.
 type LightWalletClient struct {
 	started int32 // To be used atomically.
@@ -40,12 +40,12 @@ type LightWalletClient struct {
 	// active under.
 	chainParams *chaincfg.Params
 
-	// id is the unique ID of this client assigned by the backing bitcoind
+	// id is the unique ID of this client assigned by the backing lightwallet
 	// connection.
 	id uint64
 
 	// chainConn is the backing client to our rescan client that contains
-	// the RPC and ZMQ connections to a bitcoind node.
+	// the RPC and ZMQ connections to a lightwallet node.
 	chainConn *LightWalletConn
 
 	// bestBlock keeps track of the tip of the current best chain.
@@ -97,7 +97,7 @@ type LightWalletClient struct {
 	notificationQueue *ConcurrentQueue
 
 	// zmqHeaderNtfns is a channel through which ZMQ block events will be
-	// retrieved from the backing bitcoind connection.
+	// retrieved from the backing lightwallet connection.
 	zmqHeaderNtfns chan *wire.BlockHeader
 
 	zmqChangeTipNtnfs chan *chainhash.Hash
@@ -112,10 +112,10 @@ var _ Interface = (*LightWalletClient)(nil)
 
 // BackEnd returns the name of the driver.
 func (c *LightWalletClient) BackEnd() string {
-	return "bitcoind"
+	return "lightwallet"
 }
 
-// GetBestBlock returns the highest block known to bitcoind.
+// GetBestBlock returns the highest block known to lightwallet.
 func (c *LightWalletClient) GetBestBlock() (*chainhash.Hash, int32, error) {
 	chainInfo, err := c.chainConn.client.GetChainInfo()
 	if err != nil {
@@ -201,7 +201,7 @@ func (c *LightWalletClient) GetTxOut(txHash *chainhash.Hash, index uint32,
 	return c.chainConn.client.GetTxOut(txHash, index, mempool)
 }
 
-// SendRawTransaction sends a raw transaction via bitcoind.
+// SendRawTransaction sends a raw transaction via lightwallet.
 func (c *LightWalletClient) SendRawTransaction(tx *wire.MsgTx,
 	allowHighFees bool) (*chainhash.Hash, error) {
 
@@ -337,19 +337,19 @@ func (c *LightWalletClient) RescanBlocks(
 	for _, hash := range blockHashes {
 		header, err := c.GetBlockHeaderVerbose(&hash)
 		if err != nil {
-			log.Warnf("Unable to get header %s from bitcoind: %s",
+			log.Warnf("Unable to get header %s from lightwallet: %s",
 				hash, err)
 			continue
 		}
 
-		block, err := c.GetBlock(&hash)
+		blockHeader, err := c.GetBlockHeader(&hash)
 		if err != nil {
-			log.Warnf("Unable to get block %s from bitcoind: %s",
+			log.Warnf("Unable to get block %s from lightwallet: %s",
 				hash, err)
 			continue
 		}
 
-		relevantTxs, err := c.filterBlock2(block, header.Height, false)
+		relevantTxs, err := c.filterBlock(blockHeader, header.Height, false)
 		if len(relevantTxs) > 0 {
 			rescannedBlock := btcjson.RescannedBlock{
 				Hash: hash.String(),
@@ -401,7 +401,7 @@ func (c *LightWalletClient) Rescan(blockHash *chainhash.Hash,
 	return nil
 }
 
-// Start initializes the bitcoind rescan client using the backing bitcoind
+// Start initializes the lightwallet rescan client using the backing lightwallet
 // connection and starts all goroutines necessary in order to process rescans
 // and ZMQ notifications.
 //
@@ -437,7 +437,7 @@ func (c *LightWalletClient) Start() error {
 	c.bestBlockMtx.Unlock()
 
 	// Once the client has started successfully, we'll include it in the set
-	// of rescan clients of the backing bitcoind connection in order to
+	// of rescan clients of the backing lightwallet connection in order to
 	// received ZMQ event notifications.
 	c.chainConn.AddClient(c)
 
@@ -448,7 +448,7 @@ func (c *LightWalletClient) Start() error {
 	return nil
 }
 
-// Stop stops the bitcoind rescan client from processing rescans and ZMQ
+// Stop stops the lightwallet rescan client from processing rescans and ZMQ
 // notifications.
 //
 // NOTE: This is part of the chain.Interface interface.
@@ -459,7 +459,7 @@ func (c *LightWalletClient) Stop() {
 
 	close(c.quit)
 
-	// Remove this client's reference from the bitcoind connection to
+	// Remove this client's reference from the lightwallet connection to
 	// prevent sending notifications to it after it's been stopped.
 	c.chainConn.RemoveClient(c.id)
 
@@ -556,7 +556,7 @@ func (c *LightWalletClient) rescanHandler() {
 }
 
 // ntfnHandler handles the logic to retrieve ZMQ notifications from the backing
-// bitcoind connection.
+// lightwallet connection.
 //
 // NOTE: This must be called as a goroutine.
 func (c *LightWalletClient) ntfnHandler() {
@@ -610,7 +610,7 @@ func (c *LightWalletClient) ntfnHandler() {
 	}
 }
 
-// SetBirthday sets the birthday of the bitcoind rescan client.
+// SetBirthday sets the birthday of the lightwallet rescan client.
 //
 // NOTE: This should be done before the client has been started in order for it
 // to properly carry its duties.
@@ -797,7 +797,7 @@ func (c *LightWalletClient) FilterBlocks(
 	return nil, nil
 }
 
-// rescan performs a rescan of the chain using a bitcoind backend, from the
+// rescan performs a rescan of the chain using a lightwallet backend, from the
 // specified hash to the best known hash, while watching out for reorgs that
 // happen during the rescan. It uses the addresses and outputs being tracked by
 // the client in the watch list. This is called only within a queue processing
@@ -843,7 +843,7 @@ func (c *LightWalletClient) rescan(start chainhash.Hash) error {
 		time.Unix(previousHeader.Time, 0),
 	)
 
-	// Cycle through all of the blocks known to bitcoind, being mindful of
+	// Cycle through all of the blocks known to lightwallet, being mindful of
 	// reorgs.
 	for i := previousHeader.Height + 1; i <= bestBlock.Height; i++ {
 		hash, err := c.GetBlockHash(int64(i))
@@ -856,37 +856,31 @@ func (c *LightWalletClient) rescan(start chainhash.Hash) error {
 		// fetching the whole block itself. This speeds things up as we
 		// no longer have to fetch the whole block when we know it won't
 		// match any of our filters.
-		var block *wire.MsgBlock
+		blockHeader, err := c.GetBlockHeader(hash)
+		if err != nil {
+			return err
+		}
+
 		afterBirthday := previousHeader.Time >= c.birthday.Unix()
 		if !afterBirthday {
 			header, err := c.GetBlockHeader(hash)
 			if err != nil {
 				return err
 			}
-			block = &wire.MsgBlock{
-				Header: *header,
-			}
 
 			afterBirthday = c.birthday.Before(header.Timestamp)
 			if afterBirthday {
 				c.onRescanProgress(
 					previousHash, i,
-					block.Header.Timestamp,
+					blockHeader.Timestamp,
 				)
-			}
-		}
-
-		if afterBirthday {
-			block, err = c.GetBlock(hash)
-			if err != nil {
-				return err
 			}
 		}
 
 		// get previous blockHash
 		//prevBlockHash, _ := c.GetBlockHash(int64(block.Header.Version - 1)) // version in lightWallet returns blockHeight
 
-		for block.Header.PrevBlock.String() != previousHeader.Hash {
+		for blockHeader.PrevBlock.String() != previousHeader.Hash {
 			// If we're in this for loop, it looks like we've been
 			// reorganized. We now walk backwards to the common
 			// ancestor between the best chain and the known chain.
@@ -903,7 +897,7 @@ func (c *LightWalletClient) rescan(start chainhash.Hash) error {
 			if err != nil {
 				return err
 			}
-			block, err = c.GetBlock(hash)
+			blockHeader, err = c.GetBlockHeader(hash)
 			if err != nil {
 				return err
 			}
@@ -926,7 +920,7 @@ func (c *LightWalletClient) rescan(start chainhash.Hash) error {
 					}
 				}
 			} else {
-				// Otherwise, we get it from bitcoind.
+				// Otherwise, we get it from lightwallet.
 				previousHash, err = chainhash.NewHashFromStr(
 					previousHeader.PreviousHash,
 				)
@@ -944,24 +938,24 @@ func (c *LightWalletClient) rescan(start chainhash.Hash) error {
 
 		// Now that we've ensured we haven't come across a reorg, we'll
 		// add the current block header to our list of headers.
-		blockHash := block.BlockHash()
+		blockHash := blockHeader.BlockHash()
 		previousHash = &blockHash
 		previousHeader = &btcjson.GetBlockHeaderVerboseResult{
 			Hash:         blockHash.String(),
 			Height:       i,
-			PreviousHash: block.Header.PrevBlock.String(),
-			Time:         block.Header.Timestamp.Unix(),
+			PreviousHash: blockHeader.PrevBlock.String(),
+			Time:         blockHeader.Timestamp.Unix(),
 		}
 		headers.PushBack(previousHeader)
 
 		// Notify the block and any of its relevant transacations.
-		if _, err = c.filterBlock2(block, i, true); err != nil {
+		if _, err = c.filterBlock(blockHeader, i, true); err != nil {
 			return err
 		}
 
 		if i%10000 == 0 {
 			c.onRescanProgress(
-				previousHash, i, block.Header.Timestamp,
+				previousHash, i, blockHeader.Timestamp,
 			)
 		}
 
@@ -986,11 +980,6 @@ func (c *LightWalletClient) rescan(start chainhash.Hash) error {
 	}
 
 	return nil
-}
-
-func (c *LightWalletClient) filterBlock2(block *wire.MsgBlock, height int32,
-	notify bool) ([]*wtxmgr.TxRecord, error) {
-	return nil, nil
 }
 
 // filterBlock filters a block for watched outpoints and addresses, and returns
