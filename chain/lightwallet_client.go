@@ -809,10 +809,13 @@ func (c *LightWalletClient) rescan(start chainhash.Hash) error {
 	// the height, as the hash can change during a reorganization, which we
 	// catch by testing connectivity from known blocks to the previous
 	// block.
+
+
 	bestHash, bestHeight, err := c.GetBestBlock()
 	if err != nil {
 		return err
 	}
+
 	bestHeader, err := c.GetBlockHeaderVerbose(bestHash)
 	if err != nil {
 		return err

@@ -191,7 +191,6 @@ func (c *LightWalletConn) headerEventHandler(conn *gozmq.Conn) {
 		case "rawheader":
 			lightHeader := &wire.LightWalletHeader{}
 			r := bytes.NewReader(msgBytes[1])
-			fmt.Printf("New header\n")
 			// Decode the raw bytes into a proper header.
 			if err := lightHeader.DeserializeLightHeader(r); err != nil {
 				log.Errorf("Unable to deserialize header: %v",
