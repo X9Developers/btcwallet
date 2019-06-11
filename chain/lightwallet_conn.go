@@ -281,9 +281,6 @@ func (c *LightWalletConn) NewLightWalletClient() *LightWalletClient {
 		notificationQueue: NewConcurrentQueue(20),
 		zmqHeaderNtfns:    make(chan *wire.BlockHeader),
 		zmqChangeTipNtnfs: make(chan *chainhash.Hash),
-
-		mempool:        make(map[chainhash.Hash]struct{}),
-		expiredMempool: make(map[int32]map[chainhash.Hash]struct{}),
 	}
 }
 

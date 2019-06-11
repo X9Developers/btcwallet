@@ -510,7 +510,6 @@ func (w *Wallet) scanChain(startHeight int32,
 			return err
 		}
 		header, err := chainClient.GetBlockHeader(hash)
-		fmt.Printf("%s %s\n", header.PrevBlock.String(), header.MerkleRoot.String());
 		if err != nil {
 			return err
 		}

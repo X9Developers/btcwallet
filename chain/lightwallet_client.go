@@ -69,23 +69,6 @@ type LightWalletClient struct {
 	watchedOutPoints map[wire.OutPoint]struct{}
 	watchedTxs       map[chainhash.Hash]struct{}
 
-	// mempool keeps track of all relevant transactions that have yet to be
-	// confirmed. This is used to shortcut the filtering process of a
-	// transaction when a new confirmed transaction notification is
-	// received.
-	//
-	// NOTE: This requires the watchMtx to be held.
-	mempool map[chainhash.Hash]struct{}
-
-	// expiredMempool keeps track of a set of confirmed transactions along
-	// with the height at which they were included in a block. These
-	// transactions will then be removed from the mempool after a period of
-	// 288 blocks. This is done to ensure the transactions are safe from a
-	// reorg in the chain.
-	//
-	// NOTE: This requires the watchMtx to be held.
-	expiredMempool map[int32]map[chainhash.Hash]struct{}
-
 	// notificationQueue is a concurrent unbounded queue that handles
 	// dispatching notifications to the subscriber of this client.
 	//
@@ -1039,19 +1022,6 @@ func (c *LightWalletClient) filterBlock(header *wire.BlockHeader, height int32,
 		}
 	}
 
-	// Update the expiration map by setting the block's confirmed
-	// transactions and deleting any in the mempool that were confirmed
-	// over 288 blocks ago.
-	c.watchMtx.Lock()
-	c.expiredMempool[height] = confirmedTxs
-	if oldBlock, ok := c.expiredMempool[height-288]; ok {
-		for txHash := range oldBlock {
-			delete(c.mempool, txHash)
-		}
-		delete(c.expiredMempool, height-288)
-	}
-	c.watchMtx.Unlock()
-
 	if notify {
 		c.onFilteredBlockConnected(height, header, relevantTxs)
 		c.onBlockConnected(&blockHash, height, header.Timestamp)
@@ -1075,16 +1045,6 @@ func (c *LightWalletClient) filterTx(rec *wtxmgr.TxRecord,
 	// match exactly against what's currently in the filters.
 	c.watchMtx.Lock()
 	defer c.watchMtx.Unlock()
-
-	// If we've already seen this transaction and it's now been confirmed,
-	// then we'll shortcut the filter process by immediately sending a
-	// notification to the caller that the filter matches.
-	if _, ok := c.mempool[rec.Hash]; ok {
-		if notify && blockDetails != nil {
-			c.onRelevantTx(rec, blockDetails)
-		}
-		return true, nil
-	}
 
 	// Otherwise, this is a new transaction we have yet to see. We'll need
 	// to determine if this transaction is somehow relevant to the caller.
@@ -1159,13 +1119,6 @@ func (c *LightWalletClient) filterTx(rec *wtxmgr.TxRecord,
 		return false, nil
 	}
 
-	// Otherwise, the transaction matched our filters, so we should dispatch
-	// a notification for it. If it's still unconfirmed, we'll include it in
-	// our mempool so that it can also be notified as part of
-	// FilteredBlockConnected once it confirms.
-	if blockDetails == nil {
-		c.mempool[rec.Hash] = struct{}{}
-	}
 
 	c.onRelevantTx(rec, blockDetails)
 
