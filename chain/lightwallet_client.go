@@ -83,7 +83,7 @@ type LightWalletClient struct {
 	// retrieved from the backing lightwallet connection.
 	zmqHeaderNtfns chan *wire.BlockHeader
 
-	zmqChangeTipNtnfs chan *chainhash.Hash
+	zmqChangeTipNtnfs chan *wire.MsgBlock
 
 	quit chan struct{}
 	wg   sync.WaitGroup
@@ -124,7 +124,7 @@ func (c *LightWalletClient) StopRescan() error {
 }
 
 // GetFilterBlock returns filter block for given hash
-func (c *LightWalletClient) GetFilterBlock(hash *chainhash.Hash) ([]*wtxmgr.TxRecord, error) {
+func (c *LightWalletClient) GetFilterBlock(hash *chainhash.Hash) ([]*wire.MsgTx, error) {
 	return c.chainConn.client.GetFilterBlock(hash)
 }
 
@@ -332,7 +332,14 @@ func (c *LightWalletClient) RescanBlocks(
 			continue
 		}
 
-		relevantTxs, err := c.filterBlock(blockHeader, header.Height, false)
+		transactions, err := c.GetFilterBlock(&hash)
+
+		block := wire.MsgBlock{
+			Header: *blockHeader,
+			Transactions: transactions,
+		}
+
+		relevantTxs, err := c.filterBlock(&block, header.Height, false)
 		if len(relevantTxs) > 0 {
 			rescannedBlock := btcjson.RescannedBlock{
 				Hash: hash.String(),
@@ -550,36 +557,29 @@ func (c *LightWalletClient) ntfnHandler() {
 		case header := <-c.zmqHeaderNtfns:
 			// TODO: Rostyslav Antonyshyn add valid handler for zmq headers
 			header.Nonce = 0
-		case newTipHash := <-c.zmqChangeTipNtnfs:
+		case newBlock := <-c.zmqChangeTipNtnfs:
 
 			c.bestBlockMtx.Lock()
 			bestBlock := c.bestBlock
 			c.bestBlockMtx.Unlock()
 
-			newHeader, err := c.chainConn.client.GetBlockHeader(newTipHash)
-
-			if err != nil {
-				log.Errorf("Unable to get block header for: %v: %v", newTipHash.String(), err)
-				continue
-			}
-
-			if newHeader.PrevBlock == bestBlock.Hash {
+			if newBlock.Header.PrevBlock == bestBlock.Hash {
 				newBlockHeight := bestBlock.Height + 1
 
 				_, err := c.filterBlock(
-					newHeader, newBlockHeight, true,
+					newBlock, newBlockHeight, true,
 				)
 				if err != nil {
 					log.Errorf("Unable to filter block %v: %v",
-						*newTipHash, err)
+						newBlock.Header.BlockHash().String(), err)
 					continue
 				}
 
 				// With the block succesfully filtered, we'll
 				// make it our new best block.
-				bestBlock.Hash = *newTipHash
+				bestBlock.Hash = newBlock.Header.BlockHash()
 				bestBlock.Height = newBlockHeight
-				bestBlock.Timestamp = newHeader.Timestamp
+				bestBlock.Timestamp = newBlock.Header.Timestamp
 
 				c.bestBlockMtx.Lock()
 				c.bestBlock = bestBlock
@@ -848,12 +848,17 @@ func (c *LightWalletClient) rescan(start chainhash.Hash) error {
 		}
 
 		afterBirthday := previousHeader.Time >= c.birthday.Unix()
-		if !afterBirthday {
-			header, err := c.GetBlockHeader(hash)
-			if err != nil {
-				return err
-			}
 
+		header, err := c.GetBlockHeader(hash)
+		if err != nil {
+			return err
+		}
+
+		block := &wire.MsgBlock{
+			Header: *header,
+		}
+
+		if !afterBirthday {
 			afterBirthday = c.birthday.Before(header.Timestamp)
 			if afterBirthday {
 				c.onRescanProgress(
@@ -863,8 +868,14 @@ func (c *LightWalletClient) rescan(start chainhash.Hash) error {
 			}
 		}
 
-		// get previous blockHash
-		//prevBlockHash, _ := c.GetBlockHash(int64(block.Header.Version - 1)) // version in lightWallet returns blockHeight
+		if afterBirthday {
+			block.Transactions, err = c.GetFilterBlock(hash)
+
+			if err != nil {
+				return err
+			}
+		}
+
 
 		for blockHeader.PrevBlock.String() != previousHeader.Hash {
 			// If we're in this for loop, it looks like we've been
@@ -935,7 +946,7 @@ func (c *LightWalletClient) rescan(start chainhash.Hash) error {
 		headers.PushBack(previousHeader)
 
 		// Notify the block and any of its relevant transacations.
-		if _, err = c.filterBlock(blockHeader, i, true); err != nil {
+		if _, err = c.filterBlock(block, i, true); err != nil {
 			return err
 		}
 
@@ -970,34 +981,27 @@ func (c *LightWalletClient) rescan(start chainhash.Hash) error {
 
 // filterBlock filters a block for watched outpoints and addresses, and returns
 // any matching transactions, sending notifications along the way.
-func (c *LightWalletClient) filterBlock(header *wire.BlockHeader, height int32,
+func (c *LightWalletClient) filterBlock(block *wire.MsgBlock, height int32,
 	notify bool) ([]*wtxmgr.TxRecord, error) {
 
 	// If this block happened before the client's birthday, then we'll skip
 	// it entirely.
-	if header.Timestamp.Before(c.birthday) {
+	if block.Header.Timestamp.Before(c.birthday) {
 		return nil, nil
 	}
 
 	if c.shouldNotifyBlocks() {
 		log.Debugf("Filtering block %d (%s) with %d transactions",
-			height, header.BlockHash(), 0)//len(block.Transactions))
+			height, block.BlockHash(), 0)//len(block.Transactions))
 	}
 
 	// Create a block details template to use for all of the confirmed
 	// transactions found within this block.
-	blockHash := header.BlockHash()
+	blockHash := block.BlockHash()
 	blockDetails := &btcjson.BlockDetails{
 		Hash:   blockHash.String(),
 		Height: height,
-		Time:   header.Timestamp.Unix(),
-	}
-
-	transactions, err := c.chainConn.client.GetFilterBlock(&blockHash)
-
-	if err != nil {
-		fmt.Printf("Failed to get filter block, %v: %v", blockHash.String(), err)
-		return nil, nil
+		Time:   block.Header.Timestamp.Unix(),
 	}
 
 	//
@@ -1005,26 +1009,30 @@ func (c *LightWalletClient) filterBlock(header *wire.BlockHeader, height int32,
 	// of any relevant to the caller.
 	var relevantTxs []*wtxmgr.TxRecord
 	confirmedTxs := make(map[chainhash.Hash]struct{})
-	for _, tx := range transactions {
-		// Update the index in the block details with the index of this
-		// transaction.
-		// blockDetails.Index = i
-		isRelevant, err := c.filterTx(tx, blockDetails, notify)
+	for _, tx := range block.Transactions {
+
+		rec, err := wtxmgr.NewTxRecordFromMsgTx(tx, time.Now())
+
+		if err != nil {
+			log.Errorf("Failed to create tx record\n")
+		}
+
+		isRelevant, err := c.filterTx(rec, blockDetails, notify)
 		if err != nil {
 			log.Warnf("Unable to filter transaction %v: %v",
-				tx.Hash, err)
+				rec.Hash, err)
 			continue
 		}
 
 		if isRelevant {
-			relevantTxs = append(relevantTxs, tx)
-			confirmedTxs[tx.Hash] = struct{}{}
+			relevantTxs = append(relevantTxs, rec)
+			confirmedTxs[rec.Hash] = struct{}{}
 		}
 	}
 
 	if notify {
-		c.onFilteredBlockConnected(height, header, relevantTxs)
-		c.onBlockConnected(&blockHash, height, header.Timestamp)
+		c.onFilteredBlockConnected(height, &block.Header, relevantTxs)
+		c.onBlockConnected(&blockHash, height, block.Header.Timestamp)
 	}
 
 	return relevantTxs, nil

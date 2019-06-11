@@ -219,10 +219,25 @@ func (c *LightWalletConn) headerEventHandler(conn *gozmq.Conn) {
 
 			chainHash,_ := chainhash.NewHashFromStr(hash)
 
+			header, err := c.client.GetBlockHeader(chainHash)
+
+			if err != nil {
+				continue;
+			}
+
+			transactions, err := c.client.GetFilterBlock(chainHash)
+
+			if err != nil {
+				continue;
+			}
+
 			c.rescanClientsMtx.Lock()
 			for _, client := range c.rescanClients {
 				select {
-				case client.zmqChangeTipNtnfs <- chainHash:
+				case client.zmqChangeTipNtnfs <- &wire.MsgBlock{
+					Header: *header,
+					Transactions: transactions,
+				}:
 				case <-client.quit:
 				case <-c.quit:
 					c.rescanClientsMtx.Unlock()
@@ -280,7 +295,7 @@ func (c *LightWalletConn) NewLightWalletClient() *LightWalletClient {
 
 		notificationQueue: NewConcurrentQueue(20),
 		zmqHeaderNtfns:    make(chan *wire.BlockHeader),
-		zmqChangeTipNtnfs: make(chan *chainhash.Hash),
+		zmqChangeTipNtnfs: make(chan *wire.MsgBlock),
 	}
 }
 
