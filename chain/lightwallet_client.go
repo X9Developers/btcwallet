@@ -15,6 +15,7 @@ import (
 	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/btcsuite/btcutil"
+	"github.com/btcsuite/btcutil/gcs"
 	"github.com/btcsuite/btcwallet/waddrmgr"
 	"github.com/btcsuite/btcwallet/wtxmgr"
 )
@@ -189,6 +190,11 @@ func (c *LightWalletClient) SendRawTransaction(tx *wire.MsgTx,
 	allowHighFees bool) (*chainhash.Hash, error) {
 
 	return c.chainConn.client.SendRawTransaction(tx, allowHighFees)
+}
+
+// GetCFilter returns a raw filter for given hash.
+func (c *LightWalletClient) GetCFilter(hash *chainhash.Hash) (*gcs.Filter, error) {
+	return c.chainConn.client.GetRawFilter(hash)
 }
 
 // Notifications returns a channel to retrieve notifications from.
