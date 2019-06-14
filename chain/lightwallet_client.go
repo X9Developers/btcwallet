@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"github.com/btcsuite/btcutil/gcs/builder"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -750,15 +751,55 @@ func (c *LightWalletClient) FilterBlocks(
 
 	blockFilterer := NewBlockFilterer(c.chainParams, req)
 
-	// Iterate over the requested blocks, fetching each from the rpc client.
-	// Each block will scanned using the reverse addresses indexes generated
-	// above, breaking out early if any addresses are found.
-	for i, block := range req.Blocks {
-		// TODO(conner): add prefetching, since we already know we'll be
-		// fetching *every* block
-		rawBlock, err := c.GetBlock(&block.Hash)
+	// Construct the watchlist using the addresses and outpoints contained
+	// in the filter blocks request.
+	watchList, err := buildFilterBlocksWatchList(req)
+	if err != nil {
+		return nil, err
+	}
+
+	// Iterate over the requested blocks, fetching the compact filter for
+	// each one, and matching it against the watchlist generated above. If
+	// the filter returns a positive match, the full block is then requested
+	// and scanned for addresses using the block filterer.
+	for i, blk := range req.Blocks {
+		filter, err := c.GetCFilter(&blk.Hash)
 		if err != nil {
 			return nil, err
+		}
+
+		// Skip any empty filters.
+		if filter == nil || filter.N() == 0 {
+			continue
+		}
+
+		reversed := blk.Hash
+
+		for left, right := 0, len(reversed)-1; left < right; left, right = left+1, right-1 {
+			reversed[left], reversed[right] = reversed[right], reversed[left]
+		}
+
+		key := builder.DeriveKey(&reversed)
+		matched, err := filter.MatchAny(key, watchList)
+		if err != nil {
+			return nil, err
+		} else if !matched {
+			continue
+		}
+
+		log.Infof("Fetching block height=%d hash=%v",
+			blk.Height, blk.Hash)
+
+		// TODO(conner): can optimize bandwidth by only fetching
+		// stripped blocks
+		transactions, err := c.GetFilterBlock(&blk.Hash)
+		if err != nil {
+			return nil, err
+		}
+
+		rawBlock := &wire.MsgBlock{
+			Header: wire.BlockHeader {},
+			Transactions: transactions,
 		}
 
 		if !blockFilterer.FilterBlock(rawBlock) {
@@ -772,7 +813,7 @@ func (c *LightWalletClient) FilterBlocks(
 		// *next* block from which to begin again.
 		resp := &FilterBlocksResponse{
 			BatchIndex:         uint32(i),
-			BlockMeta:          block,
+			BlockMeta:          blk,
 			FoundExternalAddrs: blockFilterer.FoundExternal,
 			FoundInternalAddrs: blockFilterer.FoundInternal,
 			FoundOutPoints:     blockFilterer.FoundOutPoints,
