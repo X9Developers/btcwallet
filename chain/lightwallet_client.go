@@ -143,7 +143,23 @@ func (c *LightWalletClient) GetBlockHeight(hash *chainhash.Hash) (int32, error) 
 
 // GetBlock returns a block from the hash.
 func (c *LightWalletClient) GetBlock(hash *chainhash.Hash) (*wire.MsgBlock, error) {
-	return c.chainConn.client.GetBlock(hash)
+
+	header, err := c.GetBlockHeader(hash)
+
+	if err != nil {
+		return nil, err
+	}
+
+	txns, err := c.GetFilterBlock(hash)
+
+	if err != nil {
+		return nil, err
+	}
+
+	return &wire.MsgBlock{
+		Header: *header,
+		Transactions: txns,
+	}, nil
 }
 
 // GetBlockVerbose returns a verbose block from the hash.
