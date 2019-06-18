@@ -130,6 +130,12 @@ func (c *LightWalletClient) GetFilterBlock(hash *chainhash.Hash) ([]*wire.MsgTx,
 	return c.chainConn.client.GetFilterBlock(hash)
 }
 
+
+// GetUnspentOutput returns utxo set for given hash and index
+func (c *LightWalletClient) GetUnspentOutput(hash *chainhash.Hash, index int32) (*btcjson.GetUnspentOutputResult, error) {
+	return c.chainConn.client.GetUnspentOutput(hash, index)
+}
+
 // GetBlockHeight returns the height for the hash, if known, or returns an
 // error.
 func (c *LightWalletClient) GetBlockHeight(hash *chainhash.Hash) (int32, error) {
