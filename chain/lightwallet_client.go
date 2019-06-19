@@ -220,6 +220,20 @@ func (c *LightWalletClient) GetCFilter(hash *chainhash.Hash) (*gcs.Filter, error
 	return c.chainConn.client.GetRawFilter(hash)
 }
 
+// IsCurrent returns whether the chain backend considers its view of the network
+// as "current".
+func (c *LightWalletClient) IsCurrent() bool {
+	bestHash, _, err := c.GetBestBlock()
+	if err != nil {
+		return false
+	}
+	bestHeader, err := c.GetBlockHeader(bestHash)
+	if err != nil {
+		return false
+	}
+	return bestHeader.Timestamp.After(time.Now().Add(-isCurrentDelta))
+}
+
 // Notifications returns a channel to retrieve notifications from.
 //
 // NOTE: This is part of the chain.Interface interface.
