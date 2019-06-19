@@ -734,7 +734,9 @@ func (w *Wallet) getSyncRange(chainClient chain.Interface,
 	if err != nil {
 		return 0, 0, err
 	}
-	startHeight := bestHeight - waddrmgr.MaxReorgDepth + 1
+	// TODO(yuraolex): fix this back
+	startHeight := bestHeight - 100 + 1
+	//startHeight := bestHeight - waddrmgr.MaxReorgDepth + 1
 	if startHeight < 0 {
 		startHeight = 0
 	}
