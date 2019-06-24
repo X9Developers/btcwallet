@@ -223,17 +223,15 @@ func (c *LightWalletClient) GetCFilter(hash *chainhash.Hash) (*gcs.Filter, error
 // IsCurrent returns whether the chain backend considers its view of the network
 // as "current".
 func (c *LightWalletClient) IsCurrent() bool {
-	bestHash, height, err := c.GetBestBlock()
+	bestHash, _, err := c.GetBestBlock()
 	if err != nil {
 		return false
 	}
-	_, err = c.GetBlockHeader(bestHash)
+	bestHeader, err := c.GetBlockHeader(bestHash)
 	if err != nil {
 		return false
 	}
-	// TODO(yuraolex): change this back, only for dev
-	return height > 580718
-	//return bestHeader.Timestamp.After(time.Now().Add(-isCurrentDelta))
+	return bestHeader.Timestamp.After(time.Now().Add(-isCurrentDelta))
 }
 
 // Notifications returns a channel to retrieve notifications from.

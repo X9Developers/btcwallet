@@ -269,11 +269,21 @@ func (c *LightWalletConn) getCurrentNet() (wire.BitcoinNet, error) {
 		return 0, err
 	}
 
-	if *hash == *chaincfg.MainNetParams.GenesisHash {
-		return chaincfg.MainNetParams.Net, nil
-	} else {
+	switch *hash {
+	case *chaincfg.RegressionNetParams.GenesisHash:
+		return chaincfg.LightWalletRegTestParams.Net, nil
+	case *chaincfg.MainNetParams.GenesisHash:
+		return chaincfg.LightWalletParams.Net, nil
+	default:
 		return 0, fmt.Errorf("unknown network with genesis hash %v", hash)
 	}
+
+	// TODO: RostyslavAntonyshyn return to mainnet only
+	//if *hash == *chaincfg.MainNetParams.GenesisHash {
+	//	return chaincfg.MainNetParams.Net, nil
+	//} else {
+	//	return 0, fmt.Errorf("unknown network with genesis hash %v", hash)
+	//}
 }
 
 // NewLightWalletClient returns a bitcoind client using the current bitcoind
