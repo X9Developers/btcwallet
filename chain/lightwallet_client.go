@@ -46,9 +46,9 @@ type LightWalletClient struct {
 	// connection.
 	id uint64
 
-	// chainConn is the backing client to our rescan client that contains
+	// ChainConn is the backing client to our rescan client that contains
 	// the RPC and ZMQ connections to a lightwallet node.
-	chainConn *LightWalletConn
+	ChainConn *LightWalletConn
 
 	// bestBlock keeps track of the tip of the current best chain.
 	bestBlockMtx sync.RWMutex
@@ -102,7 +102,7 @@ func (c *LightWalletClient) BackEnd() string {
 
 // GetBestBlock returns the highest block known to lightwallet.
 func (c *LightWalletClient) GetBestBlock() (*chainhash.Hash, int32, error) {
-	chainInfo, err := c.chainConn.client.GetChainInfo()
+	chainInfo, err := c.ChainConn.client.GetChainInfo()
 	if err != nil {
 		return nil, 0, err
 	}
@@ -117,29 +117,29 @@ func (c *LightWalletClient) GetBestBlock() (*chainhash.Hash, int32, error) {
 
 // StartRescan initiates rescan sending to lightwallet rescan request.
 func (c *LightWalletClient) StartRescan(hash *chainhash.Hash) (*string, error) {
-        return c.chainConn.client.StartRescan(hash)
+        return c.ChainConn.client.StartRescan(hash)
 }
 
 // StopRescan initiates rescan_abort.
 func (c *LightWalletClient) StopRescan() error {
-        return c.chainConn.client.AbortRescan()
+        return c.ChainConn.client.AbortRescan()
 }
 
 // GetFilterBlock returns filter block for given hash
 func (c *LightWalletClient) GetFilterBlock(hash *chainhash.Hash) ([]*wire.MsgTx, error) {
-	return c.chainConn.client.GetFilterBlock(hash)
+	return c.ChainConn.client.GetFilterBlock(hash)
 }
 
 
 // GetUnspentOutput returns utxo set for given hash and index
 func (c *LightWalletClient) GetUnspentOutput(hash *chainhash.Hash, index int32) (*btcjson.GetUnspentOutputResult, error) {
-	return c.chainConn.client.GetUnspentOutput(hash, index)
+	return c.ChainConn.client.GetUnspentOutput(hash, index)
 }
 
 // GetBlockHeight returns the height for the hash, if known, or returns an
 // error.
 func (c *LightWalletClient) GetBlockHeight(hash *chainhash.Hash) (int32, error) {
-	header, err := c.chainConn.client.GetBlockHeaderVerbose(hash)
+	header, err := c.ChainConn.client.GetBlockHeaderVerbose(hash)
 	if err != nil {
 		return 0, err
 	}
@@ -172,52 +172,52 @@ func (c *LightWalletClient) GetBlock(hash *chainhash.Hash) (*wire.MsgBlock, erro
 func (c *LightWalletClient) GetBlockVerbose(
 	hash *chainhash.Hash) (*btcjson.GetBlockVerboseResult, error) {
 
-	return c.chainConn.client.GetBlockVerbose(hash)
+	return c.ChainConn.client.GetBlockVerbose(hash)
 }
 
 // GetBlockHash returns a block hash from the height.
 func (c *LightWalletClient) GetBlockHash(height int64) (*chainhash.Hash, error) {
-	return c.chainConn.client.GetBlockHash(height)
+	return c.ChainConn.client.GetBlockHash(height)
 }
 
 // GetBlockHeader returns a block header from the hash.
 func (c *LightWalletClient) GetBlockHeader(
 	hash *chainhash.Hash) (*wire.BlockHeader, error) {
 
-	return c.chainConn.client.GetBlockHeader(hash)
+	return c.ChainConn.client.GetBlockHeader(hash)
 }
 
 // GetBlockHeaderVerbose returns a block header from the hash.
 func (c *LightWalletClient) GetBlockHeaderVerbose(
 	hash *chainhash.Hash) (*btcjson.GetBlockHeaderVerboseResult, error) {
 
-	return c.chainConn.client.GetBlockHeaderVerbose(hash)
+	return c.ChainConn.client.GetBlockHeaderVerbose(hash)
 }
 
 // GetRawTransactionVerbose returns a transaction from the tx hash.
 func (c *LightWalletClient) GetRawTransactionVerbose(
 	hash *chainhash.Hash) (*btcjson.TxRawResult, error) {
 
-	return c.chainConn.client.GetRawTransactionVerbose(hash)
+	return c.ChainConn.client.GetRawTransactionVerbose(hash)
 }
 
 // GetTxOut returns a txout from the outpoint info provided.
 func (c *LightWalletClient) GetTxOut(txHash *chainhash.Hash, index uint32,
 	mempool bool) (*btcjson.GetTxOutResult, error) {
 
-	return c.chainConn.client.GetTxOut(txHash, index, mempool)
+	return c.ChainConn.client.GetTxOut(txHash, index, mempool)
 }
 
 // SendRawTransaction sends a raw transaction via lightwallet.
 func (c *LightWalletClient) SendRawTransaction(tx *wire.MsgTx,
 	allowHighFees bool) (*chainhash.Hash, error) {
 
-	return c.chainConn.client.SendRawTransaction(tx, allowHighFees)
+	return c.ChainConn.client.SendRawTransaction(tx, allowHighFees)
 }
 
 // GetCFilter returns a raw filter for given hash.
 func (c *LightWalletClient) GetCFilter(hash *chainhash.Hash) (*gcs.Filter, error) {
-	return c.chainConn.client.GetRawFilter(hash)
+	return c.ChainConn.client.GetRawFilter(hash)
 }
 
 // IsCurrent returns whether the chain backend considers its view of the network
@@ -472,7 +472,7 @@ func (c *LightWalletClient) Start() error {
 	// Once the client has started successfully, we'll include it in the set
 	// of rescan clients of the backing lightwallet connection in order to
 	// received ZMQ event notifications.
-	c.chainConn.AddClient(c)
+	c.ChainConn.AddClient(c)
 
 	c.wg.Add(2)
 	go c.rescanHandler()
@@ -494,7 +494,7 @@ func (c *LightWalletClient) Stop() {
 
 	// Remove this client's reference from the lightwallet connection to
 	// prevent sending notifications to it after it's been stopped.
-	c.chainConn.RemoveClient(c.id)
+	c.ChainConn.RemoveClient(c.id)
 
 	c.notificationQueue.Stop()
 }

@@ -48,7 +48,7 @@ type BitcoindClient struct {
 	// connection.
 	id uint64
 
-	// chainConn is the backing client to our rescan client that contains
+	// ChainConn is the backing client to our rescan client that contains
 	// the RPC and ZMQ connections to a bitcoind node.
 	chainConn *BitcoindConn
 

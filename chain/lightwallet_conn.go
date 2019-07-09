@@ -86,6 +86,10 @@ func NewLightWalletConn(chainParams *chaincfg.Params, host, user, pass,
 	return conn, nil
 }
 
+func (c *LightWalletConn) RPCClient() *rpcclient.Client {
+	return c.client
+}
+
 // Start attempts to establish a RPC and ZMQ connection to a bitcoind node. If
 // successful, a goroutine is spawned to read events from the ZMQ connection.
 // It's possible for this function to fail due to a limited number of connection
@@ -296,7 +300,7 @@ func (c *LightWalletConn) NewLightWalletClient() *LightWalletClient {
 		id: atomic.AddUint64(&c.rescanClientCounter, 1),
 
 		chainParams: c.chainParams,
-		chainConn:   c,
+		ChainConn:   c,
 
 		rescanUpdate:     make(chan interface{}),
 		watchedAddresses: make(map[string]struct{}),
