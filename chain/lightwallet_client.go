@@ -1127,6 +1127,12 @@ func (c *LightWalletClient) filterTx(rec *wtxmgr.TxRecord,
 	blockDetails *btcjson.BlockDetails,
 	notify bool) (bool, error) {
 
+	// TODO(yuraolex): check this
+	// We shouldn't rely on filtering here, as light wallet delivers already filtered
+	// transactions, so only transactions that are relevant to current setup will be dispatched
+	// so no need for filtering here.
+
+	return true, nil
 
 	if blockDetails != nil {
 		rec.Received = time.Unix(blockDetails.Time, 0)
