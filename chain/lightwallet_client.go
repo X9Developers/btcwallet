@@ -132,7 +132,7 @@ func (c *LightWalletClient) GetFilterBlock(hash *chainhash.Hash) ([]*wire.MsgTx,
 
 
 // GetUnspentOutput returns utxo set for given hash and index
-func (c *LightWalletClient) GetUnspentOutput(hash *chainhash.Hash, index int32) (*btcjson.GetUnspentOutputResult, error) {
+func (c *LightWalletClient) GetUnspentOutput(hash *chainhash.Hash, index uint32) (*btcjson.GetUnspentOutputResult, error) {
 	return c.ChainConn.client.GetUnspentOutput(hash, index)
 }
 
