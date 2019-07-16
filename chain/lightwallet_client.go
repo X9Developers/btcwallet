@@ -201,6 +201,12 @@ func (c *LightWalletClient) GetRawTransactionVerbose(
 	return c.ChainConn.client.GetRawTransactionVerbose(hash)
 }
 
+// GetRawTransaction returns a transaction from the tx hash.
+func (c *LightWalletClient) GetRawTransaction(
+	hash *chainhash.Hash) (*btcutil.Tx, error) {
+	return c.chainConn.client.GetRawTransaction(hash)
+}
+
 // GetTxOut returns a txout from the outpoint info provided.
 func (c *LightWalletClient) GetTxOut(txHash *chainhash.Hash, index uint32,
 	mempool bool) (*btcjson.GetTxOutResult, error) {
@@ -218,6 +224,15 @@ func (c *LightWalletClient) SendRawTransaction(tx *wire.MsgTx,
 // GetCFilter returns a raw filter for given hash.
 func (c *LightWalletClient) GetCFilter(hash *chainhash.Hash) (*gcs.Filter, error) {
 	return c.ChainConn.client.GetRawFilter(hash)
+}
+
+func (c *LightWalletClient) Generate(numBlocks uint32) ([]*chainhash.Hash, error) {
+	hashes, err := c.chainConn.client.Generate(numBlocks)
+	if err != nil {
+		return nil, err
+	}
+
+	return hashes, nil
 }
 
 // IsCurrent returns whether the chain backend considers its view of the network
