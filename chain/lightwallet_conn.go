@@ -126,7 +126,7 @@ func (c *LightWalletConn) Start() error {
 			"%v", err)
 	}
 
-	c.wg.Add(2)
+	c.wg.Add(1)
 	go c.headerEventHandler(zmqHeaderConn)
 
 	return nil
@@ -217,9 +217,6 @@ func (c *LightWalletConn) headerEventHandler(conn *gozmq.Conn) {
 			c.rescanClientsMtx.Unlock()
 		case "hashblock":
 			hash := hex.EncodeToString(msgBytes[1])
-
-
-			fmt.Println("Received new tip:", hash)
 
 			chainHash,_ := chainhash.NewHashFromStr(hash)
 

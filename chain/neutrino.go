@@ -266,37 +266,36 @@ func buildFilterBlocksWatchList(req *FilterBlocksRequest) ([][]byte, error) {
 	watchList := make([][]byte, 0, watchListSize)
 
 	for _, addr := range req.ExternalAddrs {
-		//p2shAddr,
-		_, err := txscript.PayToAddrScript(addr)
+		p2shAddr, err := txscript.PayToAddrScript(addr)
 		if err != nil {
 			return nil, err
 		}
 
 		// TODO(yuraolex): fix it back
-		//watchList = append(watchList, p2shAddr)
+		watchList = append(watchList, p2shAddr)
 		watchList = append(watchList, []byte(addr.String()))
 	}
 
 
 	for _, addr := range req.InternalAddrs {
-		_, err := txscript.PayToAddrScript(addr)
+		p2shAddr, err := txscript.PayToAddrScript(addr)
 		if err != nil {
 			return nil, err
 		}
 
 		// TODO(yuraolex): fix it back
-		//watchList = append(watchList, p2shAddr)
+		watchList = append(watchList, p2shAddr)
 		watchList = append(watchList, []byte(addr.String()))
 	}
 
 	for _, addr := range req.WatchedOutPoints {
-		_, err := txscript.PayToAddrScript(addr)
+		addrb, err := txscript.PayToAddrScript(addr)
 		if err != nil {
 			return nil, err
 		}
 
 		// TODO(yuraolex): fix it back
-		//watchList = append(watchList, addr)
+		watchList = append(watchList, addrb)
 		watchList = append(watchList, []byte(addr.String()))
 
 	}

@@ -204,7 +204,7 @@ func (c *LightWalletClient) GetRawTransactionVerbose(
 // GetRawTransaction returns a transaction from the tx hash.
 func (c *LightWalletClient) GetRawTransaction(
 	hash *chainhash.Hash) (*btcutil.Tx, error) {
-	return c.chainConn.client.GetRawTransaction(hash)
+	return c.ChainConn.client.GetRawTransaction(hash)
 }
 
 // GetTxOut returns a txout from the outpoint info provided.
@@ -227,7 +227,7 @@ func (c *LightWalletClient) GetCFilter(hash *chainhash.Hash) (*gcs.Filter, error
 }
 
 func (c *LightWalletClient) Generate(numBlocks uint32) ([]*chainhash.Hash, error) {
-	hashes, err := c.chainConn.client.Generate(numBlocks)
+	hashes, err := c.ChainConn.client.Generate(numBlocks)
 	if err != nil {
 		return nil, err
 	}
