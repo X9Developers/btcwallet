@@ -12,6 +12,8 @@ import (
 	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/rpcclient"
+	grpcclient "github.com/btcsuite/btcd/rpcclient/grpcclient"
+	"github.com/btcsuite/btcd/rpcclient/grpcclient/protos"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/lightninglabs/gozmq"
 )
@@ -32,7 +34,8 @@ type LightWalletConn struct {
 	chainParams *chaincfg.Params
 
 	// client is the RPC client to the bitcoind node.
-	client *rpcclient.Client
+	client	*rpcclient.Client
+	grpcClient lightwalletrpc.LightWalletServiceClient
 
 	// zmqHeaderHost is the host listening for ZMQ connections that will be
 	// responsible for delivering raw header events.
@@ -69,14 +72,19 @@ func NewLightWalletConn(chainParams *chaincfg.Params, host, user, pass,
 		HTTPPostMode:         true,
 	}
 
-	client, err := rpcclient.New(clientCfg, nil)
+	grpcclient, err := grpcclient.New(clientCfg)
 	if err != nil {
 		return nil, err
 	}
 
+	client, err := rpcclient.New(clientCfg, nil)
+	if err != nil {
+		return nil, err
+	}
 	conn := &LightWalletConn{
 		chainParams:     chainParams,
 		client:          client,
+		grpcClient:      grpcclient,
 		zmqHeaderHost:   zmqHeaderHost,
 		zmqPollInterval: zmqPollInterval,
 		rescanClients:   make(map[uint64]*LightWalletClient),

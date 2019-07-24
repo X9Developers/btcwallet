@@ -9,12 +9,16 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+	"context"
 
 	"github.com/btcsuite/btcd/btcjson"
 	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"
+	pb "github.com/btcsuite/btcd/rpcclient/grpcclient/protos"
+	"google.golang.org/grpc/metadata"
+	//"google.golang.org/grpc"
 	"github.com/btcsuite/btcutil"
 	"github.com/btcsuite/btcutil/gcs"
 	"github.com/btcsuite/btcwallet/waddrmgr"
@@ -102,7 +106,11 @@ func (c *LightWalletClient) BackEnd() string {
 
 // GetBestBlock returns the highest block known to lightwallet.
 func (c *LightWalletClient) GetBestBlock() (*chainhash.Hash, int32, error) {
-	chainInfo, err := c.ChainConn.client.GetChainInfo()
+
+	//ctx, _ := context.WithTimeout(context.Background(), time.Second * 30)
+	md := metadata.Pairs("assetid", "0")
+	ctx := metadata.NewOutgoingContext(context.Background(), md)
+	chainInfo, err := c.ChainConn.grpcClient.GetChainInfo(ctx, &pb.Empty{})
 	if err != nil {
 		return nil, 0, err
 	}
@@ -112,7 +120,7 @@ func (c *LightWalletClient) GetBestBlock() (*chainhash.Hash, int32, error) {
 		return nil, 0, err
 	}
 
-	return hash, chainInfo.Height, nil
+	return chainInfo, chainInfo.Height, nil
 }
 
 // StartRescan initiates rescan sending to lightwallet rescan request.
