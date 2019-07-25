@@ -2,7 +2,6 @@ package chain
 
 import (
 	"container/list"
-	"context"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -14,10 +13,8 @@ import (
 	"github.com/btcsuite/btcd/btcjson"
 	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
-	pb "github.com/btcsuite/btcd/rpcclient/grpcclient/protos"
 	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"
-	//"google.golang.org/grpc"
 	"github.com/btcsuite/btcutil"
 	"github.com/btcsuite/btcutil/gcs"
 	"github.com/btcsuite/btcwallet/waddrmgr"
@@ -105,63 +102,33 @@ func (c *LightWalletClient) BackEnd() string {
 
 // GetBestBlock returns the highest block known to lightwallet.
 func (c *LightWalletClient) GetBestBlock() (*chainhash.Hash, int32, error) {
-	ctx, _ := context.WithTimeout(context.Background(), time.Second * 30)
-	chainInfo, err := c.ChainConn.grpcClient.GetChainInfo(ctx, &pb.Empty{})
-	if err != nil {
-		return nil, 0, err
-	}
-
-	hash, err := chainhash.NewHashFromStr(chainInfo.BestBlockHash)
-	if err != nil {
-		return nil, 0, err
-	}
-
-	return hash, chainInfo.Height, nil
-}
-
-// StartRescan initiates rescan sending to lightwallet rescan request.
-func (c *LightWalletClient) StartRescan(hash *chainhash.Hash) (*string, error) {
-        return c.ChainConn.client.StartRescan(hash)
-}
-
-// StopRescan initiates rescan_abort.
-func (c *LightWalletClient) StopRescan() error {
-        return c.ChainConn.client.AbortRescan()
+	return c.ChainConn.grpcClient.GetBestBlock()
 }
 
 // GetFilterBlock returns filter block for given hash
 func (c *LightWalletClient) GetFilterBlock(hash *chainhash.Hash) ([]*wire.MsgTx, error) {
-	return c.ChainConn.client.GetFilterBlock(hash)
+	return c.ChainConn.grpcClient.GetFilterBlock(hash)
 }
-
 
 // GetUnspentOutput returns utxo set for given hash and index
 func (c *LightWalletClient) GetUnspentOutput(hash *chainhash.Hash, index uint32) (*btcjson.GetUnspentOutputResult, error) {
-	return c.ChainConn.client.GetUnspentOutput(hash, index)
+	return c.ChainConn.grpcClient.GetUnspentOutput(hash, index)
 }
 
 // GetBlockHeight returns the height for the hash, if known, or returns an
 // error.
 func (c *LightWalletClient) GetBlockHeight(hash *chainhash.Hash) (int32, error) {
-	header, err := c.ChainConn.client.GetBlockHeaderVerbose(hash)
-	if err != nil {
-		return 0, err
-	}
-
-	return header.Height, nil
+	return c.ChainConn.grpcClient.GetBlockHeight(hash)
 }
 
 // GetBlock returns a block from the hash.
 func (c *LightWalletClient) GetBlock(hash *chainhash.Hash) (*wire.MsgBlock, error) {
-
 	header, err := c.GetBlockHeader(hash)
-
 	if err != nil {
 		return nil, err
 	}
 
 	txns, err := c.GetFilterBlock(hash)
-
 	if err != nil {
 		return nil, err
 	}
@@ -172,71 +139,47 @@ func (c *LightWalletClient) GetBlock(hash *chainhash.Hash) (*wire.MsgBlock, erro
 	}, nil
 }
 
-// GetBlockVerbose returns a verbose block from the hash.
-func (c *LightWalletClient) GetBlockVerbose(
-	hash *chainhash.Hash) (*btcjson.GetBlockVerboseResult, error) {
-
-	return c.ChainConn.client.GetBlockVerbose(hash)
-}
-
 // GetBlockHash returns a block hash from the height.
 func (c *LightWalletClient) GetBlockHash(height int64) (*chainhash.Hash, error) {
-	return c.ChainConn.client.GetBlockHash(height)
+	return c.ChainConn.grpcClient.GetBlockHash(height)
 }
 
 // GetBlockHeader returns a block header from the hash.
 func (c *LightWalletClient) GetBlockHeader(
 	hash *chainhash.Hash) (*wire.BlockHeader, error) {
 
-	return c.ChainConn.client.GetBlockHeader(hash)
+	return c.ChainConn.grpcClient.GetBlockHeader(hash)
 }
 
 // GetBlockHeaderVerbose returns a block header from the hash.
 func (c *LightWalletClient) GetBlockHeaderVerbose(
 	hash *chainhash.Hash) (*btcjson.GetBlockHeaderVerboseResult, error) {
 
-	return c.ChainConn.client.GetBlockHeaderVerbose(hash)
-}
-
-// GetRawTransactionVerbose returns a transaction from the tx hash.
-func (c *LightWalletClient) GetRawTransactionVerbose(
-	hash *chainhash.Hash) (*btcjson.TxRawResult, error) {
-
-	return c.ChainConn.client.GetRawTransactionVerbose(hash)
+	return c.ChainConn.grpcClient.GetBlockHeaderVerbose(hash)
 }
 
 // GetRawTransaction returns a transaction from the tx hash.
 func (c *LightWalletClient) GetRawTransaction(
 	hash *chainhash.Hash) (*btcutil.Tx, error) {
-	return c.ChainConn.client.GetRawTransaction(hash)
-}
 
-// GetTxOut returns a txout from the outpoint info provided.
-func (c *LightWalletClient) GetTxOut(txHash *chainhash.Hash, index uint32,
-	mempool bool) (*btcjson.GetTxOutResult, error) {
+	return c.ChainConn.grpcClient.GetRawTransaction(hash)
 
-	return c.ChainConn.client.GetTxOut(txHash, index, mempool)
 }
 
 // SendRawTransaction sends a raw transaction via lightwallet.
 func (c *LightWalletClient) SendRawTransaction(tx *wire.MsgTx,
 	allowHighFees bool) (*chainhash.Hash, error) {
 
-	return c.ChainConn.client.SendRawTransaction(tx, allowHighFees)
+	return c.ChainConn.grpcClient.SendRawTransaction(tx, allowHighFees)
 }
 
 // GetCFilter returns a raw filter for given hash.
 func (c *LightWalletClient) GetCFilter(hash *chainhash.Hash) (*gcs.Filter, error) {
-	return c.ChainConn.client.GetRawFilter(hash)
+	return c.ChainConn.grpcClient.GetBlockFilter(hash)
 }
 
 func (c *LightWalletClient) Generate(numBlocks uint32) ([]*chainhash.Hash, error) {
-	hashes, err := c.ChainConn.client.Generate(numBlocks)
-	if err != nil {
-		return nil, err
-	}
-
-	return hashes, nil
+	return c.ChainConn.grpcClient.Generate(numBlocks)
 }
 
 // IsCurrent returns whether the chain backend considers its view of the network

@@ -12,8 +12,7 @@ import (
 	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/rpcclient"
-	grpcclient "github.com/btcsuite/btcd/rpcclient/grpcclient"
-	"github.com/btcsuite/btcd/rpcclient/grpcclient/protos"
+	grpcclient "github.com/btcsuite/btcd/grpcclient"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/lightninglabs/gozmq"
 )
@@ -34,8 +33,8 @@ type LightWalletConn struct {
 	chainParams *chaincfg.Params
 
 	// client is the RPC client to the bitcoind node.
-	client	*rpcclient.Client
-	grpcClient lightwalletrpc.LightWalletServiceClient
+	//client	*rpcclient.Client
+	grpcClient *grpcclient.Client
 
 	// zmqHeaderHost is the host listening for ZMQ connections that will be
 	// responsible for delivering raw header events.
@@ -72,19 +71,19 @@ func NewLightWalletConn(chainParams *chaincfg.Params, host, user, pass,
 		HTTPPostMode:         true,
 	}
 
-	grpcclient, err := grpcclient.New(clientCfg)
+	grpcClient, err := grpcclient.New(clientCfg)
 	if err != nil {
 		return nil, err
 	}
 
-	client, err := rpcclient.New(clientCfg, nil)
-	if err != nil {
-		return nil, err
-	}
+	//client, err := rpcclient.New(clientCfg, nil)
+	//if err != nil {
+	//	return nil, err
+	//}
 	conn := &LightWalletConn{
 		chainParams:     chainParams,
-		client:          client,
-		grpcClient:      grpcclient,
+		//client:          client,
+		grpcClient:      grpcClient,
 		zmqHeaderHost:   zmqHeaderHost,
 		zmqPollInterval: zmqPollInterval,
 		rescanClients:   make(map[uint64]*LightWalletClient),
@@ -94,8 +93,8 @@ func NewLightWalletConn(chainParams *chaincfg.Params, host, user, pass,
 	return conn, nil
 }
 
-func (c *LightWalletConn) RPCClient() *rpcclient.Client {
-	return c.client
+func (c *LightWalletConn) RPCClient() *grpcclient.Client{
+	return c.grpcClient
 }
 
 // Start attempts to establish a RPC and ZMQ connection to a bitcoind node. If
@@ -111,11 +110,11 @@ func (c *LightWalletConn) Start() error {
 	// Verify that the node is running on the expected network.
 	net, err := c.getCurrentNet()
 	if err != nil {
-		c.client.Disconnect()
+		c.grpcClient. Disconnect()
 		return err
 	}
 	if net != c.chainParams.Net {
-		c.client.Disconnect()
+		c.grpcClient.Disconnect()
 		return fmt.Errorf("expected network %v, got %v",
 			c.chainParams.Net, net)
 	}
@@ -129,7 +128,7 @@ func (c *LightWalletConn) Start() error {
 		c.zmqHeaderHost, []string{"hashblock", "rawheader"}, c.zmqPollInterval,
 	)
 	if err != nil {
-		c.client.Disconnect()
+		c.grpcClient.Disconnect()
 		return fmt.Errorf("unable to subscribe for zmq header events: "+
 			"%v", err)
 	}
@@ -152,9 +151,7 @@ func (c *LightWalletConn) Stop() {
 	}
 
 	close(c.quit)
-	c.client.Shutdown()
-
-	c.client.WaitForShutdown()
+	c.grpcClient.Disconnect()
 	c.wg.Wait()
 }
 
@@ -228,13 +225,13 @@ func (c *LightWalletConn) headerEventHandler(conn *gozmq.Conn) {
 
 			chainHash,_ := chainhash.NewHashFromStr(hash)
 
-			header, err := c.client.GetBlockHeader(chainHash)
+			header, err := c.grpcClient.GetBlockHeader(chainHash)
 
 			if err != nil {
 				continue;
 			}
 
-			transactions, err := c.client.GetFilterBlock(chainHash)
+			transactions, err := c.grpcClient.GetFilterBlock(chainHash)
 
 			if err != nil {
 				continue;
@@ -273,7 +270,7 @@ func (c *LightWalletConn) headerEventHandler(conn *gozmq.Conn) {
 // getCurrentNet returns the network on which the bitcoind node is running.
 func (c *LightWalletConn) getCurrentNet() (wire.BitcoinNet, error) {
 
-	hash, err := c.client.GetBlockHash(0)
+	hash, err := c.grpcClient.GetBlockHash(0)
 	if err != nil {
 		return 0, err
 	}
