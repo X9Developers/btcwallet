@@ -271,9 +271,7 @@ func buildFilterBlocksWatchList(req *FilterBlocksRequest) ([][]byte, error) {
 			return nil, err
 		}
 
-		// TODO(yuraolex): fix it back
 		watchList = append(watchList, p2shAddr)
-		watchList = append(watchList, []byte(addr.String()))
 	}
 
 
@@ -283,9 +281,7 @@ func buildFilterBlocksWatchList(req *FilterBlocksRequest) ([][]byte, error) {
 			return nil, err
 		}
 
-		// TODO(yuraolex): fix it back
 		watchList = append(watchList, p2shAddr)
-		watchList = append(watchList, []byte(addr.String()))
 	}
 
 	for _, addr := range req.WatchedOutPoints {
@@ -294,9 +290,7 @@ func buildFilterBlocksWatchList(req *FilterBlocksRequest) ([][]byte, error) {
 			return nil, err
 		}
 
-		// TODO(yuraolex): fix it back
 		watchList = append(watchList, addrb)
-		watchList = append(watchList, []byte(addr.String()))
 
 	}
 
