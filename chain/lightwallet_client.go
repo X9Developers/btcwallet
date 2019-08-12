@@ -319,7 +319,7 @@ func (c *LightWalletClient) RescanBlocks(
 
 		block, err := c.GetBlock(&hash)
 
-		relevantTxs, err := c.filterBlock(&block, header.Height, false)
+		relevantTxs, err := c.filterBlock(block, header.Height, false)
 		if len(relevantTxs) > 0 {
 			rescannedBlock := btcjson.RescannedBlock{
 				Hash: hash.String(),
@@ -993,17 +993,17 @@ func (c *LightWalletClient) rescan(start chainhash.Hash) error {
 
 		afterBirthday := previousHeader.Time >= c.birthday.Unix()
 
-		header, err := c.GetBlockHeader(hash)
+		blockHeader, err := c.GetBlockHeader(hash)
 		if err != nil {
 			return err
 		}
 
 		block := &wire.MsgBlock{
-			Header: *header,
+			Header: *blockHeader,
 		}
 
 		if !afterBirthday {
-			afterBirthday = c.birthday.Before(header.Timestamp)
+			afterBirthday = c.birthday.Before(blockHeader.Timestamp)
 			if afterBirthday {
 				c.onRescanProgress(
 					previousHash, i,
