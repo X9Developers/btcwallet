@@ -123,20 +123,7 @@ func (c *LightWalletClient) GetBlockHeight(hash *chainhash.Hash) (int32, error) 
 
 // GetBlock returns a block from the hash.
 func (c *LightWalletClient) GetBlock(hash *chainhash.Hash) (*wire.MsgBlock, error) {
-	header, err := c.GetBlockHeader(hash)
-	if err != nil {
-		return nil, err
-	}
-
-	txns, err := c.GetFilterBlock(hash)
-	if err != nil {
-		return nil, err
-	}
-
-	return &wire.MsgBlock{
-		Header: *header,
-		Transactions: txns,
-	}, nil
+	return c.ChainConn.grpcClient.GetBlock(hash)
 }
 
 // GetBlockHash returns a block hash from the height.
@@ -330,19 +317,7 @@ func (c *LightWalletClient) RescanBlocks(
 			continue
 		}
 
-		blockHeader, err := c.GetBlockHeader(&hash)
-		if err != nil {
-			log.Warnf("Unable to get block %s from lightwallet: %s",
-				hash, err)
-			continue
-		}
-
-		transactions, err := c.GetFilterBlock(&hash)
-
-		block := wire.MsgBlock{
-			Header: *blockHeader,
-			Transactions: transactions,
-		}
+		block, err := c.GetBlock(&hash)
 
 		relevantTxs, err := c.filterBlock(&block, header.Height, false)
 		if len(relevantTxs) > 0 {
@@ -923,14 +898,9 @@ func (c *LightWalletClient) FilterBlocks(
 
 		// TODO(conner): can optimize bandwidth by only fetching
 		// stripped blocks
-		transactions, err := c.GetFilterBlock(&blk.Hash)
+		rawBlock, err := c.GetBlock(&blk.Hash)
 		if err != nil {
 			return nil, err
-		}
-
-		rawBlock := &wire.MsgBlock{
-			Header: wire.BlockHeader {},
-			Transactions: transactions,
 		}
 
 		if !blockFilterer.FilterBlock(rawBlock) {
@@ -1020,10 +990,6 @@ func (c *LightWalletClient) rescan(start chainhash.Hash) error {
 		// fetching the whole block itself. This speeds things up as we
 		// no longer have to fetch the whole block when we know it won't
 		// match any of our filters.
-		blockHeader, err := c.GetBlockHeader(hash)
-		if err != nil {
-			return err
-		}
 
 		afterBirthday := previousHeader.Time >= c.birthday.Unix()
 
