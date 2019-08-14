@@ -225,13 +225,7 @@ func (c *LightWalletConn) headerEventHandler(conn *gozmq.Conn) {
 
 			chainHash,_ := chainhash.NewHashFromStr(hash)
 
-			header, err := c.grpcClient.GetBlockHeader(chainHash)
-
-			if err != nil {
-				continue;
-			}
-
-			transactions, err := c.grpcClient.GetFilterBlock(chainHash)
+			block, err := c.grpcClient.GetBlock(chainHash)
 
 			if err != nil {
 				continue;
@@ -240,10 +234,7 @@ func (c *LightWalletConn) headerEventHandler(conn *gozmq.Conn) {
 			c.rescanClientsMtx.Lock()
 			for _, client := range c.rescanClients {
 				select {
-				case client.zmqChangeTipNtnfs <- &wire.MsgBlock{
-					Header: *header,
-					Transactions: transactions,
-				}:
+				case client.zmqChangeTipNtnfs <- block:
 				case <-client.quit:
 				case <-c.quit:
 					c.rescanClientsMtx.Unlock()
