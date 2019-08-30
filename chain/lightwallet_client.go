@@ -1135,7 +1135,7 @@ func (c *LightWalletClient) filterBlock(block *wire.MsgBlock, height int32,
 
 	if c.shouldNotifyBlocks() {
 		log.Debugf("Filtering block %d (%s) with %d transactions",
-			height, block.BlockHash(), 0)//len(block.Transactions))
+			height, block.BlockHash(), len(block.Transactions))
 	}
 
 	// Create a block details template to use for all of the confirmed
