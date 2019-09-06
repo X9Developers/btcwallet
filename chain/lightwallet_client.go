@@ -149,8 +149,28 @@ func (c *LightWalletClient) GetBlockHeaderVerbose(
 func (c *LightWalletClient) GetRawTransaction(
 	hash *chainhash.Hash) (*btcutil.Tx, error) {
 
-	return c.ChainConn.grpcClient.GetRawTransaction(hash)
+	txConf, err := c.ChainConn.grpcClient.GetRawTransaction(hash)
 
+	if err != nil {
+		return nil, err
+	}
+
+	return btcutil.NewTx(txConf.Tx), nil
+
+}
+
+// GetRawTransaction returns a transaction from the tx hash.
+func (c *LightWalletClient) GetRawTransactionVerbose(
+	hash *chainhash.Hash) (*btcutil.Tx, *chainhash.Hash, uint32, error) {
+	txConf, err := c.ChainConn.grpcClient.GetRawTransaction(hash)
+
+	if err != nil {
+		return nil, nil, 0, err
+	}
+
+	tx := btcutil.NewTx(txConf.Tx)
+	tx.SetIndex(int(txConf.TxIndex))
+	return tx, txConf.BlockHash, txConf.BlockHeight, nil
 }
 
 // SendRawTransaction sends a raw transaction via lightwallet.
