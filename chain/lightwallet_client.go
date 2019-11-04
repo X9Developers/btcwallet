@@ -189,6 +189,10 @@ func (c *LightWalletClient) Generate(numBlocks uint32) ([]*chainhash.Hash, error
 	return c.ChainConn.grpcClient.Generate(numBlocks)
 }
 
+func (c *LightWalletClient) LoadSecondLayerCache(startBlock uint32) (bool, error) {
+	return c.ChainConn.grpcClient.LoadCache(startBlock)
+}
+
 // IsCurrent returns whether the chain backend considers its view of the network
 // as "current".
 func (c *LightWalletClient) IsCurrent() bool {
