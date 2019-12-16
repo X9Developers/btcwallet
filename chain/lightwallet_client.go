@@ -102,32 +102,39 @@ func (c *LightWalletClient) BackEnd() string {
 
 // GetBestBlock returns the highest block known to lightwallet.
 func (c *LightWalletClient) GetBestBlock() (*chainhash.Hash, int32, error) {
+	log.Debugf("Attempting to GetBestBlock from lw")
 	return c.ChainConn.grpcClient.GetBestBlock()
 }
 
 // GetFilterBlock returns filter block for given hash
 func (c *LightWalletClient) GetFilterBlock(hash *chainhash.Hash) ([]*wire.MsgTx, error) {
+	log.Debugf("Attempting to GetFilterBlock from lw for hash %s", hash.String())
 	return c.ChainConn.grpcClient.GetFilterBlock(hash)
 }
 
 // GetUnspentOutput returns utxo set for given hash and index
 func (c *LightWalletClient) GetUnspentOutput(hash *chainhash.Hash, index uint32) (*btcjson.GetUnspentOutputResult, error) {
+	log.Debugf("Attempting to GetUnspentOutput from lw for hash %s", hash.String())
 	return c.ChainConn.grpcClient.GetUnspentOutput(hash, index)
 }
 
 // GetBlockHeight returns the height for the hash, if known, or returns an
 // error.
 func (c *LightWalletClient) GetBlockHeight(hash *chainhash.Hash) (int32, error) {
+	log.Debugf("Attempting to GetBlockHeight from lw for hash %s", hash.String())
 	return c.ChainConn.grpcClient.GetBlockHeight(hash)
 }
 
 // GetBlock returns a block from the hash.
 func (c *LightWalletClient) GetBlock(hash *chainhash.Hash) (*wire.MsgBlock, error) {
+	log.Debugf("Attempting to GetBlock from lw for hash %s", hash.String())
 	return c.ChainConn.grpcClient.GetBlock(hash)
 }
 
 // GetBlockHash returns a block hash from the height.
 func (c *LightWalletClient) GetBlockHash(height int64) (*chainhash.Hash, error) {
+
+	log.Debugf("Attempting to GetBlockHash from lw for height %d", height)
 	return c.ChainConn.grpcClient.GetBlockHash(height)
 }
 
@@ -135,6 +142,7 @@ func (c *LightWalletClient) GetBlockHash(height int64) (*chainhash.Hash, error) 
 func (c *LightWalletClient) GetBlockHeader(
 	hash *chainhash.Hash) (*wire.BlockHeader, error) {
 
+	log.Debugf("Attempting to GetBlockHeader from lw for hash %s", hash.String())
 	return c.ChainConn.grpcClient.GetBlockHeader(hash)
 }
 
@@ -142,6 +150,7 @@ func (c *LightWalletClient) GetBlockHeader(
 func (c *LightWalletClient) GetBlockHeaderVerbose(
 	hash *chainhash.Hash) (*btcjson.GetBlockHeaderVerboseResult, error) {
 
+	log.Debugf("Attempting to GetBlockHeaderVerbose from lw for hash %s", hash.String())
 	return c.ChainConn.grpcClient.GetBlockHeaderVerbose(hash)
 }
 
@@ -149,6 +158,7 @@ func (c *LightWalletClient) GetBlockHeaderVerbose(
 func (c *LightWalletClient) GetRawTransaction(
 	hash *chainhash.Hash) (*btcutil.Tx, error) {
 
+	log.Debugf("Attempting to GetRawTransaction from lw for hash %s", hash.String())
 	txConf, err := c.ChainConn.grpcClient.GetRawTransaction(hash)
 
 	if err != nil {
@@ -162,6 +172,8 @@ func (c *LightWalletClient) GetRawTransaction(
 // GetRawTransaction returns a transaction from the tx hash.
 func (c *LightWalletClient) GetRawTransactionVerbose(
 	hash *chainhash.Hash) (*btcutil.Tx, *chainhash.Hash, uint32, error) {
+
+	log.Debugf("Attempting to GetRawTransactionVerbose from lw for hash %s", hash.String())
 	txConf, err := c.ChainConn.grpcClient.GetRawTransaction(hash)
 
 	if err != nil {
@@ -177,25 +189,36 @@ func (c *LightWalletClient) GetRawTransactionVerbose(
 func (c *LightWalletClient) SendRawTransaction(tx *wire.MsgTx,
 	allowHighFees bool) (*chainhash.Hash, error) {
 
+	log.Debugf("Attempting to SendRawTransaction")
 	return c.ChainConn.grpcClient.SendRawTransaction(tx, allowHighFees)
 }
 
 // GetCFilter returns a raw filter for given hash.
 func (c *LightWalletClient) GetCFilter(hash *chainhash.Hash) (*gcs.Filter, error) {
+	log.Debugf("Attempting to GetCFilter from lw for hash %s", hash.String())
 	return c.ChainConn.grpcClient.GetBlockFilter(hash)
 }
 
 func (c *LightWalletClient) Generate(numBlocks uint32) ([]*chainhash.Hash, error) {
+	log.Debugf("Attempting to Generate %d blocks", numBlocks)
 	return c.ChainConn.grpcClient.Generate(numBlocks)
 }
 
 func (c *LightWalletClient) LoadSecondLayerCache(startBlock uint32) (bool, error) {
+	log.Debugf("Attempting to LoadSecondLayerCache")
 	return c.ChainConn.grpcClient.LoadCache(startBlock)
+}
+
+func (c *LightWalletClient) FreeSecondLayerCache() error {
+	log.Debugf("Attempting to FreeSecondLayerCache")
+	return c.ChainConn.grpcClient.FreeCache()
 }
 
 // IsCurrent returns whether the chain backend considers its view of the network
 // as "current".
 func (c *LightWalletClient) IsCurrent() bool {
+
+	log.Debugf("Attempting to check if network considered as current")
 	bestHash, _, err := c.GetBestBlock()
 	if err != nil {
 		return false
@@ -1242,7 +1265,7 @@ func (c *LightWalletClient) filterTx(rec *wtxmgr.TxRecord,
 
 		// Otherwise, we'll check whether it matches a pkScript in our
 		// watch list encoded as an address. To do so, we'll re-derive
-		// the pkScript of the output the input is attempting to spend.
+		// the pkScript of the output the input is Attempting to spend.
 		pkScript, err := txscript.ComputePkScript(
 			txIn.SignatureScript, txIn.Witness,
 		)
