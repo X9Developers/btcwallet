@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"net"
+	"io"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -113,6 +114,7 @@ func (c *LightWalletConn) Start() error {
 		c.grpcClient. Disconnect()
 		return err
 	}
+
 	if net != c.chainParams.Net {
 		c.grpcClient.Disconnect()
 		return fmt.Errorf("expected network %v, got %v",
@@ -166,6 +168,12 @@ func (c *LightWalletConn) headerEventHandler(conn *gozmq.Conn) {
 	log.Info("Started listening for header notifications via ZMQ "+
 		"on", c.zmqHeaderHost)
 
+	var (
+		command [len("rawheader")]byte
+		seqNum  [seqNumLen]byte
+		data    = make([]byte, maxRawBlockSize)
+	)
+
 	for {
 		// Before attempting to read from the ZMQ socket, we'll make
 		// sure to check if we've been requested to shut down.
@@ -176,8 +184,21 @@ func (c *LightWalletConn) headerEventHandler(conn *gozmq.Conn) {
 		}
 
 		// Poll an event from the ZMQ socket.
-		msgBytes, err := conn.Receive()
+		var (
+			msgBytes = [][]byte{command[:], data, seqNum[:]}
+			err  error
+		)
+
+		// Poll an event from the ZMQ socket.
+		msgBytes, err =  conn.Receive(msgBytes)
 		if err != nil {
+
+			// EOF should only be returned if the connection was
+			// explicitly closed, so we can exit at this point.
+			if err == io.EOF {
+				return
+			}
+
 			// It's possible that the connection to the socket
 			// continuously times out, so we'll prevent logging this
 			// error to prevent spamming the logs.
@@ -222,7 +243,6 @@ func (c *LightWalletConn) headerEventHandler(conn *gozmq.Conn) {
 			c.rescanClientsMtx.Unlock()
 		case "hashblock":
 			hash := hex.EncodeToString(msgBytes[1])
-
 			chainHash,_ := chainhash.NewHashFromStr(hash)
 
 			block, err := c.grpcClient.GetBlock(chainHash)
