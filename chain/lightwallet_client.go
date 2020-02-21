@@ -214,6 +214,11 @@ func (c *LightWalletClient) FreeSecondLayerCache() error {
 	return c.ChainConn.grpcClient.FreeCache()
 }
 
+func (c *LightWalletClient) EstimateNetworkFee(blocks uint64) (int64, error) {
+	log.Debugf("Attempting to EstimateNetworkFee")
+	return c.ChainConn.grpcClient.EstimateNetworkFee(blocks)
+}
+
 // IsCurrent returns whether the chain backend considers its view of the network
 // as "current".
 func (c *LightWalletClient) IsCurrent() bool {
