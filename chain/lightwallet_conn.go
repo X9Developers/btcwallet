@@ -5,10 +5,10 @@ import (
 	"encoding/hex"
 	"fmt"
 	"net"
-	"io"
 	"sync"
 	"sync/atomic"
 	"time"
+	"strings"
 
 	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
@@ -77,13 +77,8 @@ func NewLightWalletConn(chainParams *chaincfg.Params, host, user, pass,
 		return nil, err
 	}
 
-	//client, err := rpcclient.New(clientCfg, nil)
-	//if err != nil {
-	//	return nil, err
-	//}
 	conn := &LightWalletConn{
 		chainParams:     chainParams,
-		//client:          client,
 		grpcClient:      grpcClient,
 		zmqHeaderHost:   zmqHeaderHost,
 		zmqPollInterval: zmqPollInterval,
@@ -190,13 +185,14 @@ func (c *LightWalletConn) headerEventHandler(conn *gozmq.Conn) {
 		)
 
 		// Poll an event from the ZMQ socket.
-		msgBytes, err =  conn.Receive(msgBytes)
+		msgBytes, err = conn.Receive(msgBytes)
 		if err != nil {
 
 			// EOF should only be returned if the connection was
 			// explicitly closed, so we can exit at this point.
-			if err == io.EOF {
-				return
+			if strings.Contains(err.Error(), "EOF") ||
+				strings.Contains(err.Error(), "An existing connection was forcibly closed by the remote host") {
+					return
 			}
 
 			// It's possible that the connection to the socket
@@ -246,7 +242,6 @@ func (c *LightWalletConn) headerEventHandler(conn *gozmq.Conn) {
 			chainHash,_ := chainhash.NewHashFromStr(hash)
 
 			block, err := c.grpcClient.GetBlock(chainHash)
-
 			if err != nil {
 				continue;
 			}
