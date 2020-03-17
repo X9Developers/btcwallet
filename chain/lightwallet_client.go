@@ -219,6 +219,11 @@ func (c *LightWalletClient) EstimateNetworkFee(blocks uint64) (int64, error) {
 	return c.ChainConn.grpcClient.EstimateNetworkFee(blocks)
 }
 
+func (c *LightWalletClient) GetRawTxByIndex(blockHeight int64, txIndex uint32) (*wire.MsgTx, error) {
+	log.Debugf("Attempting to GetRawTxByIndex")
+	return c.ChainConn.grpcClient.GetRawTxByIndex(blockHeight, txIndex)
+}
+
 // IsCurrent returns whether the chain backend considers its view of the network
 // as "current".
 func (c *LightWalletClient) IsCurrent() bool {
