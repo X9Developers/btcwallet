@@ -123,6 +123,14 @@ var DefaultScryptOptions = ScryptOptions{
 	P: 1,
 }
 
+// FastScryptOptions are the scrypt options that should be used for testing
+// purposes only where speed is more important than security.
+var FastScryptOptions = ScryptOptions{
+	N: 16,
+	R: 8,
+	P: 1,
+}
+
 // addrKey is used to uniquely identify an address even when those addresses
 // would end up being the same bitcoin address (as is the case for
 // pay-to-pubkey and pay-to-pubkey-hash style of addresses).
@@ -722,6 +730,43 @@ func (m *Manager) ForEachActiveAddress(ns walletdb.ReadBucket, fn func(addr btcu
 
 	for _, scopedMgr := range m.scopedManagers {
 		err := scopedMgr.ForEachActiveAddress(ns, fn)
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// ForEachRelevantActiveAddress invokes the given closure on each active
+// address relevant to the wallet. Ideally, only addresses within the default
+// key scopes would be relevant, but due to a bug (now fixed) in which change
+// addresses could be created outside of the default key scopes, we now need to
+// check for those as well.
+func (m *Manager) ForEachRelevantActiveAddress(ns walletdb.ReadBucket,
+	fn func(addr btcutil.Address) error) error {
+
+	m.mtx.RLock()
+	defer m.mtx.RUnlock()
+
+	for _, scopedMgr := range m.scopedManagers {
+		// If the manager is for a default key scope, we'll return all
+		// addresses, otherwise we'll only return internal addresses, as
+		// that's the branch used for change addresses.
+		isDefaultKeyScope := false
+		for _, defaultKeyScope := range DefaultKeyScopes {
+			if scopedMgr.Scope() == defaultKeyScope {
+				isDefaultKeyScope = true
+				break
+			}
+		}
+
+		var err error
+		if isDefaultKeyScope {
+			err = scopedMgr.ForEachActiveAddress(ns, fn)
+		} else {
+			err = scopedMgr.ForEachInternalActiveAddress(ns, fn)
+		}
 		if err != nil {
 			return err
 		}
