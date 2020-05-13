@@ -16,6 +16,7 @@ import (
 	grpcclient "github.com/btcsuite/btcd/grpcclient"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/lightninglabs/gozmq"
+	"github.com/lightningnetwork/lnd/signal"
 )
 
 // BitcoindConn represents a persistent client connection to a bitcoind node
@@ -106,7 +107,7 @@ func (c *LightWalletConn) Start() error {
 	// Verify that the node is running on the expected network.
 	net, err := c.getCurrentNet()
 	if err != nil {
-		c.grpcClient. Disconnect()
+		c.grpcClient.Disconnect()
 		return err
 	}
 
@@ -159,6 +160,7 @@ func (c *LightWalletConn) Stop() {
 func (c *LightWalletConn) headerEventHandler(conn *gozmq.Conn) {
 	defer c.wg.Done()
 	defer conn.Close()
+	defer signal.RequestShutdown()
 
 	log.Info("Started listening for header notifications via ZMQ "+
 		"on", c.zmqHeaderHost)
@@ -289,13 +291,6 @@ func (c *LightWalletConn) getCurrentNet() (wire.BitcoinNet, error) {
 	default:
 		return 0, fmt.Errorf("unknown network with genesis hash %v", hash)
 	}
-
-	// TODO: RostyslavAntonyshyn return to mainnet only
-	//if *hash == *chaincfg.MainNetParams.GenesisHash {
-	//	return chaincfg.MainNetParams.Net, nil
-	//} else {
-	//	return 0, fmt.Errorf("unknown network with genesis hash %v", hash)
-	//}
 }
 
 // NewLightWalletClient returns a bitcoind client using the current bitcoind
