@@ -220,8 +220,18 @@ func (c *LightWalletClient) EstimateNetworkFee(blocks uint64) (int64, error) {
 }
 
 func (c *LightWalletClient) GetRawTxByIndex(blockHeight int64, txIndex uint32) (*wire.MsgTx, error) {
-	log.Debugf("Attempting to GetRawTxByIndex")
+	log.Debugf("Attempting to GetRawTxByIndex, height=%d", blockHeight)
 	return c.ChainConn.grpcClient.GetRawTxByIndex(blockHeight, txIndex)
+}
+
+func (c *LightWalletClient) LockOutpoint(outpoint wire.OutPoint) error {
+	log.Debugf("Attempting to LockOutpoint ", outpoint.String())
+	return c.ChainConn.grpcClient.LockOutpoint(outpoint)
+}
+
+func (c *LightWalletClient) UnlockOutpoint(outpoint wire.OutPoint) error {
+	log.Debugf("Attempting to UnlockOutpoint ", outpoint.String())
+	return c.ChainConn.grpcClient.LockOutpoint(outpoint)
 }
 
 // IsCurrent returns whether the chain backend considers its view of the network
