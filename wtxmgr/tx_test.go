@@ -45,6 +45,10 @@ var (
 		Block: Block{Hash: *TstSignedTxBlockHash, Height: TstSpendingTxBlockHeight},
 		Time:  time.Unix(1389114091, 0),
 	}
+
+	// defaultDBTimeout specifies the timeout value when opening the wallet
+	// database.
+	defaultDBTimeout = 10 * time.Second
 )
 
 func testDB() (walletdb.DB, func(), error) {
@@ -52,7 +56,9 @@ func testDB() (walletdb.DB, func(), error) {
 	if err != nil {
 		return nil, func() {}, err
 	}
-	db, err := walletdb.Create("bdb", filepath.Join(tmpDir, "db"), true)
+	db, err := walletdb.Create(
+		"bdb", filepath.Join(tmpDir, "db"), true, defaultDBTimeout,
+	)
 	return db, func() { os.RemoveAll(tmpDir) }, err
 }
 
@@ -64,7 +70,9 @@ func testStore() (*Store, walletdb.DB, func(), error) {
 		return nil, nil, func() {}, err
 	}
 
-	db, err := walletdb.Create("bdb", filepath.Join(tmpDir, "db"), true)
+	db, err := walletdb.Create(
+		"bdb", filepath.Join(tmpDir, "db"), true, defaultDBTimeout,
+	)
 	if err != nil {
 		os.RemoveAll(tmpDir)
 		return nil, nil, nil, err
@@ -2276,11 +2284,11 @@ func TestTxLabel(t *testing.T) {
 	defer teardown()
 
 	// txid is the transaction hash we will use to write and get labels for.
-	txid := TstRecvTx.Hash()
+	txid := &chainhash.Hash{1}
 
 	// txidNotFound is distinct from txid, and will not have a label written
 	// to disk.
-	txidNotFound := TstSpendingTx.Hash()
+	txidNotFound := &chainhash.Hash{2}
 
 	// getBucket gets the top level bucket, and fails the test if it is
 	// not found.
@@ -2417,19 +2425,20 @@ func assertOutputLocksExist(t *testing.T, s *Store, ns walletdb.ReadBucket,
 
 	t.Helper()
 
-	var found []wire.OutPoint
-	forEachLockedOutput(ns, func(op wire.OutPoint, _ LockID, _ time.Time) {
-		found = append(found, op)
-	})
-	if len(found) != len(exp) {
+	outputs, err := s.ListLockedOutputs(ns)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(outputs) != len(exp) {
 		t.Fatalf("expected to find %v locked output(s), found %v",
-			len(exp), len(found))
+			len(exp), len(outputs))
 	}
 
 	for _, expOp := range exp {
 		exists := false
-		for _, foundOp := range found {
-			if expOp == foundOp {
+		for _, found := range outputs {
+			if expOp == found.Outpoint {
 				exists = true
 				break
 			}
@@ -2445,7 +2454,7 @@ func lock(t *testing.T, s *Store, ns walletdb.ReadWriteBucket,
 
 	t.Helper()
 
-	expiry, err := s.LockOutput(ns, id, op)
+	expiry, err := s.LockOutput(ns, id, op, 10*time.Minute)
 	if err != exp {
 		t.Fatalf("expected err %q, got %q", exp, err)
 	}

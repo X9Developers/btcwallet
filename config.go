@@ -32,8 +32,6 @@ const (
 	defaultLogFilename      = "btcwallet.log"
 	defaultRPCMaxClients    = 10
 	defaultRPCMaxWebsockets = 25
-
-	walletDbName = "wallet.db"
 )
 
 var (
@@ -58,6 +56,7 @@ type config struct {
 	DebugLevel    string                  `short:"d" long:"debuglevel" description:"Logging level {trace, debug, info, warn, error, critical}"`
 	LogDir        string                  `long:"logdir" description:"Directory to log output."`
 	Profile       string                  `long:"profile" description:"Enable HTTP profiling on given port -- NOTE port must be between 1024 and 65536"`
+	DBTimeout     time.Duration           `long:"dbtimeout" description:"The timeout value to use when opening the wallet database."`
 
 	// Wallet options
 	WalletPass string `long:"walletpass" default-mask:"-" description:"The public wallet password -- Only required if the wallet was created with one"`
@@ -199,7 +198,7 @@ func parseAndSetDebugLevels(debugLevel string) error {
 	if !strings.Contains(debugLevel, ",") && !strings.Contains(debugLevel, "=") {
 		// Validate debug log level.
 		if !validLogLevel(debugLevel) {
-			str := "The specified debug level [%v] is invalid"
+			str := "the specified debug level [%v] is invalid"
 			return fmt.Errorf(str, debugLevel)
 		}
 
@@ -213,7 +212,7 @@ func parseAndSetDebugLevels(debugLevel string) error {
 	// issues and update the log levels accordingly.
 	for _, logLevelPair := range strings.Split(debugLevel, ",") {
 		if !strings.Contains(logLevelPair, "=") {
-			str := "The specified debug level contains an invalid " +
+			str := "the specified debug level contains an invalid " +
 				"subsystem/level pair [%v]"
 			return fmt.Errorf(str, logLevelPair)
 		}
@@ -224,14 +223,14 @@ func parseAndSetDebugLevels(debugLevel string) error {
 
 		// Validate subsystem.
 		if _, exists := subsystemLoggers[subsysID]; !exists {
-			str := "The specified subsystem [%v] is invalid -- " +
+			str := "the specified subsystem [%v] is invalid -- " +
 				"supported subsytems %v"
 			return fmt.Errorf(str, subsysID, supportedSubsystems())
 		}
 
 		// Validate log level.
 		if !validLogLevel(logLevel) {
-			str := "The specified debug level [%v] is invalid"
+			str := "the specified debug level [%v] is invalid"
 			return fmt.Errorf(str, logLevel)
 		}
 
@@ -273,6 +272,7 @@ func loadConfig() (*config, []string, error) {
 		MaxPeers:               neutrino.MaxPeers,
 		BanDuration:            neutrino.BanDuration,
 		BanThreshold:           neutrino.BanThreshold,
+		DBTimeout:              wallet.DefaultDBTimeout,
 	}
 
 	// Pre-parse the command line options to see if an alternative config
@@ -415,11 +415,11 @@ func loadConfig() (*config, []string, error) {
 
 	// Ensure the wallet exists or create it when the create flag is set.
 	netDir := networkDir(cfg.AppDataDir.Value, activeNet.Params)
-	dbPath := filepath.Join(netDir, walletDbName)
+	dbPath := filepath.Join(netDir, wallet.WalletDBName)
 
 	if cfg.CreateTemp && cfg.Create {
-		err := fmt.Errorf("The flags --create and --createtemp can not " +
-			"be specified together. Use --help for more information.")
+		err := fmt.Errorf("the flags --create and --createtemp can not " +
+			"be specified together. Use --help for more information")
 		fmt.Fprintln(os.Stderr, err)
 		return nil, nil, err
 	}
@@ -430,7 +430,7 @@ func loadConfig() (*config, []string, error) {
 		return nil, nil, err
 	}
 
-	if cfg.CreateTemp {
+	if cfg.CreateTemp { // nolint:gocritic
 		tempWalletExists := false
 
 		if dbFileExists {
@@ -457,8 +457,8 @@ func loadConfig() (*config, []string, error) {
 		// Error if the create flag is set and the wallet already
 		// exists.
 		if dbFileExists {
-			err := fmt.Errorf("The wallet database file `%v` "+
-				"already exists.", dbPath)
+			err := fmt.Errorf("the wallet database file `%v` "+
+				"already exists", dbPath)
 			fmt.Fprintln(os.Stderr, err)
 			return nil, nil, err
 		}
@@ -485,11 +485,11 @@ func loadConfig() (*config, []string, error) {
 			return nil, nil, err
 		}
 		if !keystoreExists {
-			err = fmt.Errorf("The wallet does not exist.  Run with the " +
-				"--create option to initialize and create it.")
+			err = fmt.Errorf("the wallet does not exist, run with " +
+				"the --create option to initialize and create it")
 		} else {
-			err = fmt.Errorf("The wallet is in legacy format.  Run with the " +
-				"--create option to import it.")
+			err = fmt.Errorf("the wallet is in legacy format, run " +
+				"with the --create option to import it")
 		}
 		fmt.Fprintln(os.Stderr, err)
 		return nil, nil, err
@@ -605,7 +605,7 @@ func loadConfig() (*config, []string, error) {
 		for _, addr := range cfg.ExperimentalRPCListeners {
 			_, seen := seenAddresses[addr]
 			if seen {
-				err := fmt.Errorf("Address `%s` may not be "+
+				err := fmt.Errorf("address `%s` may not be "+
 					"used as a listener address for both "+
 					"RPC servers", addr)
 				fmt.Fprintln(os.Stderr, err)

@@ -22,6 +22,7 @@ import (
 	"github.com/btcsuite/btcwallet/netparams"
 	"github.com/btcsuite/btcwallet/wallet/txauthor"
 	"github.com/btcsuite/btcwallet/wallet/txrules"
+	"github.com/btcsuite/btcwallet/wallet/txsizes"
 	"github.com/jessevdk/go-flags"
 )
 
@@ -146,6 +147,8 @@ func makeInputSource(outputs []btcjson.ListUnspentResult) txauthor.InputSource {
 		sourceErr       error
 	)
 	for _, output := range outputs {
+		output := output
+
 		outputAmount, err := btcutil.NewAmount(output.Amount)
 		if err != nil {
 			sourceErr = fmt.Errorf(
@@ -188,13 +191,21 @@ func makeInputSource(outputs []btcjson.ListUnspentResult) txauthor.InputSource {
 // makeDestinationScriptSource creates a ChangeSource which is used to receive
 // all correlated previous input value.  A non-change address is created by this
 // function.
-func makeDestinationScriptSource(rpcClient *rpcclient.Client, accountName string) txauthor.ChangeSource {
-	return func() ([]byte, error) {
+func makeDestinationScriptSource(rpcClient *rpcclient.Client, accountName string) *txauthor.ChangeSource {
+
+	// GetNewAddress always returns a P2PKH address since it assumes
+	// BIP-0044.
+	newChangeScript := func() ([]byte, error) {
 		destinationAddress, err := rpcClient.GetNewAddress(accountName)
 		if err != nil {
 			return nil, err
 		}
 		return txscript.PayToAddrScript(destinationAddress)
+	}
+
+	return &txauthor.ChangeSource{
+		ScriptSize: txsizes.P2PKHPkScriptSize,
+		NewScript:  newChangeScript,
 	}
 }
 
@@ -315,7 +326,8 @@ func sweep() error {
 			totalSwept, numPublished, transactionNoun)
 	}
 	if numErrors > 0 {
-		return fmt.Errorf("Failed to publish %d %s", numErrors, transactionNoun)
+		return fmt.Errorf("failed to publish %d %s", numErrors,
+			transactionNoun)
 	}
 
 	return nil

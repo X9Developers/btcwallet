@@ -12,33 +12,42 @@ import (
 	"github.com/btcsuite/btcd/wire"
 	"github.com/btcsuite/btcutil"
 	"github.com/btcsuite/btcutil/psbt"
+	"github.com/btcsuite/btcwallet/waddrmgr"
 	"github.com/btcsuite/btcwallet/wallet/txauthor"
 	"github.com/btcsuite/btcwallet/wallet/txrules"
+	"github.com/btcsuite/btcwallet/walletdb"
 	"github.com/btcsuite/btcwallet/wtxmgr"
 )
 
 // FundPsbt creates a fully populated PSBT packet that contains enough inputs to
 // fund the outputs specified in the passed in packet with the specified fee
-// rate. If there is change left, a change output from the wallet is added.
+// rate. If there is change left, a change output from the wallet is added and
+// the index of the change output is returned. Otherwise no additional output
+// is created and the index -1 is returned.
 //
 // NOTE: If the packet doesn't contain any inputs, coin selection is performed
-// automatically. If the packet does contain any inputs, it is assumed that full
-// coin selection happened externally and no additional inputs are added. If the
-// specified inputs aren't enough to fund the outputs with the given fee rate,
-// an error is returned.
+// automatically, only selecting inputs from the account based on the given key
+// scope and account number. If a key scope is not specified, then inputs from
+// accounts matching the account number provided across all key scopes may be
+// selected. This is done to handle the default account case, where a user wants
+// to fund a PSBT with inputs regardless of their type (NP2WKH, P2WKH, etc.). If
+// the packet does contain any inputs, it is assumed that full coin selection
+// happened externally and no additional inputs are added. If the specified
+// inputs aren't enough to fund the outputs with the given fee rate, an error is
+// returned.
 //
 // NOTE: A caller of the method should hold the global coin selection lock of
 // the wallet. However, no UTXO specific lock lease is acquired for any of the
 // selected/validated inputs by this method. It is in the caller's
 // responsibility to lock the inputs before handing the partial transaction out.
-func (w *Wallet) FundPsbt(packet *psbt.Packet, account uint32,
-	feeSatPerKB btcutil.Amount) error {
+func (w *Wallet) FundPsbt(packet *psbt.Packet, keyScope *waddrmgr.KeyScope,
+	account uint32, feeSatPerKB btcutil.Amount) (int32, error) {
 
 	// Make sure the packet is well formed. We only require there to be at
 	// least one output but not necessarily any inputs.
 	err := psbt.VerifyInputOutputLen(packet, false, true)
 	if err != nil {
-		return err
+		return 0, err
 	}
 
 	txOut := packet.UnsignedTx.TxOut
@@ -53,7 +62,7 @@ func (w *Wallet) FundPsbt(packet *psbt.Packet, account uint32,
 		// dust.
 		err := txrules.CheckOutput(output, txrules.DefaultRelayFeePerKb)
 		if err != nil {
-			return err
+			return 0, err
 		}
 	}
 
@@ -68,7 +77,7 @@ func (w *Wallet) FundPsbt(packet *psbt.Packet, account uint32,
 	addInputInfo := func(inputs []*wire.TxIn) error {
 		packet.Inputs = make([]psbt.PInput, len(inputs))
 		for idx, in := range inputs {
-			tx, utxo, _, err := w.FetchInputInfo(
+			tx, utxo, derivationPath, _, err := w.FetchInputInfo(
 				&in.PreviousOutPoint,
 			)
 			if err != nil {
@@ -89,8 +98,27 @@ func (w *Wallet) FundPsbt(packet *psbt.Packet, account uint32,
 			}
 			packet.Inputs[idx].SighashType = txscript.SigHashAll
 
-			// We don't want to include the witness just yet.
+			// Include the derivation path for each input.
+			packet.Inputs[idx].Bip32Derivation = []*psbt.Bip32Derivation{
+				derivationPath,
+			}
+
+			// We don't want to include the witness or any script
+			// on the unsigned TX just yet.
 			packet.UnsignedTx.TxIn[idx].Witness = wire.TxWitness{}
+			packet.UnsignedTx.TxIn[idx].SignatureScript = nil
+
+			// For nested P2WKH we need to add the redeem script to
+			// the input, otherwise an offline wallet won't be able
+			// to sign for it. For normal P2WKH this will be nil.
+			addr, witnessProgram, _, err := w.scriptForOutput(utxo)
+			if err != nil {
+				return fmt.Errorf("error fetching UTXO "+
+					"script: %v", err)
+			}
+			if addr.AddrType() == waddrmgr.NestedWitnessPubKey {
+				packet.Inputs[idx].RedeemScript = witnessProgram
+			}
 		}
 
 		return nil
@@ -104,11 +132,12 @@ func (w *Wallet) FundPsbt(packet *psbt.Packet, account uint32,
 		// includes everything we need, specifically fee estimation and
 		// change address creation.
 		tx, err = w.CreateSimpleTx(
-			account, packet.UnsignedTx.TxOut, 1, feeSatPerKB,
-			false,
+			keyScope, account, packet.UnsignedTx.TxOut, 1,
+			feeSatPerKB, false,
 		)
 		if err != nil {
-			return fmt.Errorf("error creating funding TX: %v", err)
+			return 0, fmt.Errorf("error creating funding TX: %v",
+				err)
 		}
 
 		// Copy over the inputs now then collect all UTXO information
@@ -118,7 +147,7 @@ func (w *Wallet) FundPsbt(packet *psbt.Packet, account uint32,
 		packet.UnsignedTx.TxIn = tx.Tx.TxIn
 		err = addInputInfo(tx.Tx.TxIn)
 		if err != nil {
-			return err
+			return 0, err
 		}
 
 	// If there are inputs, we need to check if they're sufficient and add
@@ -127,11 +156,18 @@ func (w *Wallet) FundPsbt(packet *psbt.Packet, account uint32,
 		// Make sure all inputs provided are actually ours.
 		err = addInputInfo(txIn)
 		if err != nil {
-			return err
+			return 0, err
 		}
 
 		// We can leverage the fee calculation of the txauthor package
-		// if we provide the selected UTXOs as a coin source.
+		// if we provide the selected UTXOs as a coin source. We just
+		// need to make sure we always return the full list of user-
+		// selected UTXOs rather than a subset, otherwise our change
+		// amount will be off (in case the user selected multiple UTXOs
+		// that are large enough on their own). That's why we use our
+		// own static input source creator instead of the more generic
+		// makeInputSource() that selects a subset that is "large
+		// enough".
 		credits := make([]wtxmgr.Credit, len(txIn))
 		for idx, in := range txIn {
 			utxo := packet.Inputs[idx].WitnessUtxo
@@ -141,15 +177,20 @@ func (w *Wallet) FundPsbt(packet *psbt.Packet, account uint32,
 				PkScript: utxo.PkScript,
 			}
 		}
-		inputSource := makeInputSource(credits)
+		inputSource := constantInputSource(credits)
 
 		// We also need a change source which needs to be able to insert
 		// a new change addresse into the database.
 		dbtx, err := w.db.BeginReadWriteTx()
 		if err != nil {
-			return err
+			return 0, err
 		}
-		_, changeSource := w.addrMgrWithChangeSource(dbtx, account)
+		_, changeSource, err := w.addrMgrWithChangeSource(
+			dbtx, keyScope, account,
+		)
+		if err != nil {
+			return 0, err
+		}
 
 		// Ask the txauthor to create a transaction with our selected
 		// coins. This will perform fee estimation and add a change
@@ -159,24 +200,25 @@ func (w *Wallet) FundPsbt(packet *psbt.Packet, account uint32,
 		)
 		if err != nil {
 			_ = dbtx.Rollback()
-			return fmt.Errorf("fee estimation not successful: %v",
-				err)
+			return 0, fmt.Errorf("fee estimation not successful: "+
+				"%v", err)
 		}
 
 		// The transaction could be created, let's commit the DB TX to
 		// store the change address (if one was created).
 		err = dbtx.Commit()
 		if err != nil {
-			return fmt.Errorf("could not add change address to "+
+			return 0, fmt.Errorf("could not add change address to "+
 				"database: %v", err)
 		}
 	}
 
 	// If there is a change output, we need to copy it over to the PSBT now.
+	var changeTxOut *wire.TxOut
 	if tx.ChangeIndex >= 0 {
+		changeTxOut = tx.Tx.TxOut[tx.ChangeIndex]
 		packet.UnsignedTx.TxOut = append(
-			packet.UnsignedTx.TxOut,
-			tx.Tx.TxOut[tx.ChangeIndex],
+			packet.UnsignedTx.TxOut, changeTxOut,
 		)
 		packet.Outputs = append(packet.Outputs, psbt.POutput{})
 	}
@@ -186,10 +228,22 @@ func (w *Wallet) FundPsbt(packet *psbt.Packet, account uint32,
 	// partial inputs and outputs accordingly.
 	err = psbt.InPlaceSort(packet)
 	if err != nil {
-		return fmt.Errorf("could not sort PSBT: %v", err)
+		return 0, fmt.Errorf("could not sort PSBT: %v", err)
 	}
 
-	return nil
+	// The change output index might have changed after the sorting. We need
+	// to find our index again.
+	changeIndex := int32(-1)
+	if changeTxOut != nil {
+		for idx, txOut := range packet.UnsignedTx.TxOut {
+			if psbt.TxOutsEqual(changeTxOut, txOut) {
+				changeIndex = int32(idx)
+				break
+			}
+		}
+	}
+
+	return changeIndex, nil
 }
 
 // FinalizePsbt expects a partial transaction with all inputs and outputs fully
@@ -202,7 +256,9 @@ func (w *Wallet) FundPsbt(packet *psbt.Packet, account uint32,
 //
 // NOTE: This method does NOT publish the transaction after it's been finalized
 // successfully.
-func (w *Wallet) FinalizePsbt(packet *psbt.Packet) error {
+func (w *Wallet) FinalizePsbt(keyScope *waddrmgr.KeyScope, account uint32,
+	packet *psbt.Packet) error {
+
 	// Let's check that this is actually something we can and want to sign.
 	// We need at least one input and one output.
 	err := psbt.VerifyInputOutputLen(packet, true, true)
@@ -234,7 +290,7 @@ func (w *Wallet) FinalizePsbt(packet *psbt.Packet) error {
 		// We can only sign this input if it's ours, so we try to map it
 		// to a coin we own. If we can't, then we'll continue as it
 		// isn't our input.
-		fullTx, txOut, _, err := w.FetchInputInfo(
+		fullTx, txOut, _, _, err := w.FetchInputInfo(
 			&txIn.PreviousOutPoint,
 		)
 		if err != nil {
@@ -273,8 +329,37 @@ func (w *Wallet) FinalizePsbt(packet *psbt.Packet) error {
 			}
 		}
 
-		// Finally, we'll sign the input as is, and populate the input
-		// with the witness and sigScript (if needed).
+		// Finally, if the input doesn't belong to a watch-only account,
+		// then we'll sign it as is, and populate the input with the
+		// witness and sigScript (if needed).
+		watchOnly := false
+		err = walletdb.View(w.db, func(tx walletdb.ReadTx) error {
+			ns := tx.ReadBucket(waddrmgrNamespaceKey)
+			var err error
+			if keyScope == nil {
+				// If a key scope wasn't specified, then coin
+				// selection was performed from the default
+				// wallet accounts (NP2WKH, P2WKH), so any key
+				// scope provided doesn't impact the result of
+				// this call.
+				watchOnly, err = w.Manager.IsWatchOnlyAccount(
+					ns, waddrmgr.KeyScopeBIP0084, account,
+				)
+			} else {
+				watchOnly, err = w.Manager.IsWatchOnlyAccount(
+					ns, *keyScope, account,
+				)
+			}
+			return err
+		})
+		if err != nil {
+			return fmt.Errorf("unable to determine if account is "+
+				"watch-only: %v", err)
+		}
+		if watchOnly {
+			continue
+		}
+
 		witness, sigScript, err := w.ComputeInputScript(
 			tx, signOutput, idx, sigHashes, in.SighashType, nil,
 		)
@@ -302,4 +387,31 @@ func (w *Wallet) FinalizePsbt(packet *psbt.Packet) error {
 	}
 
 	return nil
+}
+
+// constantInputSource creates an input source function that always returns the
+// static set of user-selected UTXOs.
+func constantInputSource(eligible []wtxmgr.Credit) txauthor.InputSource {
+	// Current inputs and their total value. These won't change over
+	// different invocations as we want our inputs to remain static since
+	// they're selected by the user.
+	currentTotal := btcutil.Amount(0)
+	currentInputs := make([]*wire.TxIn, 0, len(eligible))
+	currentScripts := make([][]byte, 0, len(eligible))
+	currentInputValues := make([]btcutil.Amount, 0, len(eligible))
+
+	for _, credit := range eligible {
+		nextInput := wire.NewTxIn(&credit.OutPoint, nil, nil)
+		currentTotal += credit.Amount
+		currentInputs = append(currentInputs, nextInput)
+		currentScripts = append(currentScripts, credit.PkScript)
+		currentInputValues = append(currentInputValues, credit.Amount)
+	}
+
+	return func(target btcutil.Amount) (btcutil.Amount, []*wire.TxIn,
+		[]btcutil.Amount, [][]byte, error) {
+
+		return currentTotal, currentInputs, currentInputValues,
+			currentScripts, nil
+	}
 }
