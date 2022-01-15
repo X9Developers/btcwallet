@@ -531,28 +531,28 @@ func (s *ScopedKeyManager) AccountProperties(ns walletdb.ReadBucket,
 			acctInfo.acctKeyPriv == nil
 		props.AddrSchema = acctInfo.addrSchema
 
-		// Export the account public key with the correct version
-		// corresponding to the manager's key scope for non-watch-only
-		// accounts. This isn't done for watch-only accounts to maintain
-		// the account public key consistent with what the caller
-		// provided. Note that his is only done for the default key
-		// scopes, as we only know the HD versions for those.
-		isDefaultKeyScope := false
-		for _, scope := range DefaultKeyScopes {
-			if s.scope == scope {
-				isDefaultKeyScope = true
-				break
-			}
-		}
-		if acctInfo.acctType == accountDefault && isDefaultKeyScope {
-			props.AccountPubKey, err = s.cloneKeyWithVersion(
-				acctInfo.acctKeyPub,
-			)
-			if err != nil {
-				return nil, fmt.Errorf("failed to retrieve "+
-					"account public key: %v", err)
-			}
-		}
+		//// Export the account public key with the correct version
+		//// corresponding to the manager's key scope for non-watch-only
+		//// accounts. This isn't done for watch-only accounts to maintain
+		//// the account public key consistent with what the caller
+		//// provided. Note that his is only done for the default key
+		//// scopes, as we only know the HD versions for those.
+		//isDefaultKeyScope := false
+		//for _, scope := range DefaultKeyScopes {
+		//	if s.scope == scope {
+		//		isDefaultKeyScope = true
+		//		break
+		//	}
+		//}
+		//if acctInfo.acctType == accountDefault && isDefaultKeyScope {
+		//	props.AccountPubKey, err = s.cloneKeyWithVersion(
+		//		acctInfo.acctKeyPub,
+		//	)
+		//	if err != nil {
+		//		return nil, fmt.Errorf("failed to retrieve "+
+		//			"account public key: %v", err)
+		//	}
+		//}
 	} else {
 		props.AccountName = ImportedAddrAccountName // reserved, nonchangable
 		props.IsWatchOnly = s.rootManager.WatchOnly()

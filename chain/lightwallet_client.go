@@ -118,6 +118,16 @@ func (c *LightWalletClient) GetUnspentOutput(hash *chainhash.Hash, index uint32)
 	return c.ChainConn.grpcClient.GetUnspentOutput(hash, index)
 }
 
+// GetSpendDetails returns rawtx where outpoint was spent
+func (c *LightWalletClient) GetSpendingDetails(hash *chainhash.Hash, index uint32) (*btcutil.Tx, int32, error) {
+	log.Debugf("Attempting to GetSpendingDetails from lw for hash %s", hash.String())
+	txConf, err :=  c.ChainConn.grpcClient.GetSpendingDetails(hash, index)
+	if err != nil {
+		return nil, 0, err
+	}
+	return btcutil.NewTx(txConf.Tx), int32(txConf.BlockHeight), nil
+}
+
 // GetBlockHeight returns the height for the hash, if known, or returns an
 // error.
 func (c *LightWalletClient) GetBlockHeight(hash *chainhash.Hash) (int32, error) {
