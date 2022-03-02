@@ -284,6 +284,8 @@ func (c *LightWalletConn) getCurrentNet() (wire.BitcoinNet, error) {
 	}
 
 	switch *hash {
+        case *chaincfg.TestNet3Params.GenesisHash:
+                return chaincfg.BitcoinLWTestNetParams.Net, nil
 	case *chaincfg.RegressionNetParams.GenesisHash:
 		return chaincfg.BitcoinLWRegTestParams.Net, nil
 	case *chaincfg.MainNetParams.GenesisHash:
